@@ -13,7 +13,7 @@ def home():
     return "SnipeBot is running!"
 
 def run_flask():
-    port = os.getenv("PORT", 8080)
+    port = int(os.getenv("PORT", 8080))
     server = Thread(target=app.run, kwargs={"host": "0.0.0.0", "port": port}, daemon=True)
     server.start()
 
@@ -78,23 +78,15 @@ async def snipe_slash(interaction: discord.Interaction):
     if snipe["attachments"]:
         for attachment in snipe["attachments"]:
             url = attachment.url
-
-            # Check if URL is a valid image (jpg, png, gif, etc.)
-            if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=url)  # Embed the image directly
-                break  # Only display one image at a time
-
-            # If the URL is from a service like Tenor, Giphy, or others (including Twitter GIF links)
-            elif "tenor.com" in url or "giphy.com" in url or "twitter.com" in url:
-                embed.set_image(url=url)  # Display the image/GIF from the external link
-                break  # Only display one image at a time
-
+            if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")) or any(x in url for x in ["tenor.com", "giphy.com", "twitter.com"]):
+                embed.set_image(url=url)
+                break
             elif url:
                 embed.add_field(name="**Attachment:**", value=f"[View Attachment]({url})", inline=False)
 
     await interaction.response.send_message(embed=embed)
 
-# Slash Command: /mess (ephemeral)
+# Slash Command: /mess
 @bot.tree.command(name="mess", description="DM a user with a message (admin only)")
 @app_commands.describe(member="User to DM", message="The message to send")
 @app_commands.checks.has_permissions(manage_guild=True)
@@ -115,7 +107,7 @@ async def mess(interaction: discord.Interaction, member: discord.Member, message
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# Slash Command: /maintainer (public)
+# Slash Command: /maintainer
 @bot.tree.command(name="maintainer", description="Shows who maintains the bot")
 async def maintainer(interaction: discord.Interaction):
     embed = discord.Embed(
@@ -158,17 +150,9 @@ async def s(ctx, page: int = 1):
     if snipe["attachments"]:
         for attachment in snipe["attachments"]:
             url = attachment.url
-
-            # Check if URL is a valid image (jpg, png, gif, etc.)
-            if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=url)  # Embed the image directly
-                break  # Only display one image at a time
-
-            # If the URL is from a service like Tenor, Giphy, or others (including Twitter GIF links)
-            elif "tenor.com" in url or "giphy.com" in url or "twitter.com" in url:
-                embed.set_image(url=url)  # Display the image/GIF from the external link
-                break  # Only display one image at a time
-
+            if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")) or any(x in url for x in ["tenor.com", "giphy.com", "twitter.com"]):
+                embed.set_image(url=url)
+                break
             elif url:
                 embed.add_field(name="**Attachment:**", value=f"[View Attachment]({url})", inline=False)
 
