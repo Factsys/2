@@ -81,7 +81,7 @@ async def snipe_slash(interaction: discord.Interaction):
 
             # Check if URL is a valid image (jpg, png, gif, etc.)
             if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=url)
+                embed.set_image(url=url)  # Embed the image directly
                 break  # Only display one image at a time
 
             # If the URL is from a service like Tenor, Giphy, or others (including Twitter GIF links)
@@ -161,7 +161,7 @@ async def s(ctx, page: int = 1):
 
             # Check if URL is a valid image (jpg, png, gif, etc.)
             if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=url)
+                embed.set_image(url=url)  # Embed the image directly
                 break  # Only display one image at a time
 
             # If the URL is from a service like Tenor, Giphy, or others (including Twitter GIF links)
