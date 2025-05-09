@@ -43,13 +43,20 @@ async def on_message_delete(message):
     if message.author.bot:
         return
 
-    if message.channel.id not in sniped_messages:
-        sniped_messages[message.channel.id] = []
-    
-    sniped_messages[message.channel.id].append({
+    embed_url = None
+    # Attempt to get embed image/gif
+    if message.embeds:
+        for embed in message.embeds:
+            if embed.image and embed.image.url:
+                embed_url = embed.image.url
+            elif embed.thumbnail and embed.thumbnail.url:
+                embed_url = embed.thumbnail.url
+
+    sniped_messages.setdefault(message.channel.id, []).append({
         "content": message.content,
         "author": message.author,
         "attachments": message.attachments,
+        "embed_url": embed_url,
         "time": message.created_at
     })
 
@@ -83,6 +90,8 @@ async def snipe_slash(interaction: discord.Interaction):
                 break
             elif url:
                 embed.add_field(name="**Attachment:**", value=f"[View Attachment]({url})", inline=False)
+    elif snipe.get("embed_url"):
+        embed.set_image(url=snipe["embed_url"])
 
     await interaction.response.send_message(embed=embed)
 
@@ -155,6 +164,8 @@ async def s(ctx, page: int = 1):
                 break
             elif url:
                 embed.add_field(name="**Attachment:**", value=f"[View Attachment]({url})", inline=False)
+    elif snipe.get("embed_url"):
+        embed.set_image(url=snipe["embed_url"])
 
     await ctx.send(embed=embed)
 
