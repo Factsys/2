@@ -31,7 +31,7 @@ sniped_messages = {}
 @bot.event
 async def on_ready():
     try:
-        synced = await bot.tree.sync()  # Sync slash commands with Discord
+        synced = await bot.tree.sync()
         print(f"Synced {len(synced)} slash commands!")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
@@ -78,10 +78,18 @@ async def snipe_slash(interaction: discord.Interaction):
     if snipe["attachments"]:
         for attachment in snipe["attachments"]:
             url = attachment.url
-            try:
-                embed.set_image(url=url)  # Try to display image if it's one
-                break  # Only show one visual image
-            except Exception:
+
+            # Check if URL is a valid image (jpg, png, gif, etc.)
+            if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=url)
+                break  # Only display one image at a time
+
+            # If the URL is from a service like Tenor, Giphy, or others (including Twitter GIF links)
+            elif "tenor.com" in url or "giphy.com" in url or "twitter.com" in url:
+                embed.set_image(url=url)  # Display the image/GIF from the external link
+                break  # Only display one image at a time
+
+            elif url:
                 embed.add_field(name="**Attachment:**", value=f"[View Attachment]({url})", inline=False)
 
     await interaction.response.send_message(embed=embed)
@@ -150,10 +158,18 @@ async def s(ctx, page: int = 1):
     if snipe["attachments"]:
         for attachment in snipe["attachments"]:
             url = attachment.url
-            try:
-                embed.set_image(url=url)  # Try to display image if it's one
-                break  # Only show one visual image
-            except Exception:
+
+            # Check if URL is a valid image (jpg, png, gif, etc.)
+            if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=url)
+                break  # Only display one image at a time
+
+            # If the URL is from a service like Tenor, Giphy, or others (including Twitter GIF links)
+            elif "tenor.com" in url or "giphy.com" in url or "twitter.com" in url:
+                embed.set_image(url=url)  # Display the image/GIF from the external link
+                break  # Only display one image at a time
+
+            elif url:
                 embed.add_field(name="**Attachment:**", value=f"[View Attachment]({url})", inline=False)
 
     await ctx.send(embed=embed)
