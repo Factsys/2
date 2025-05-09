@@ -5,7 +5,6 @@ import os
 from flask import Flask
 from threading import Thread
 import aiohttp
-import io
 
 # Flask app to keep the bot running on Render
 app = Flask('')
@@ -27,7 +26,7 @@ intents.members = True
 
 # Initialize bot
 bot = commands.Bot(command_prefix=",", intents=intents)
-bot.remove_command('help')  # Remove the default help command
+bot.remove_command('help')  # Remove default help command
 sniped_messages = {}  # Store deleted messages
 
 @bot.event
@@ -45,7 +44,6 @@ async def on_message_delete(message):
     if message.author.bot:
         return
 
-    # Initialize sniped messages for the channel if not done already
     if message.channel.id not in sniped_messages:
         sniped_messages[message.channel.id] = []
 
@@ -57,45 +55,13 @@ async def on_message_delete(message):
         "content": message.content,
         "author": message.author,
         "attachments": attachment_urls,
-        "time": message.created_at
+        "time": message.created_at,
+        "channel": message.channel
     })
 
     # Keep only the last 10 sniped messages
     if len(sniped_messages[message.channel.id]) > 10:
         sniped_messages[message.channel.id].pop(0)
-
-# Slash Command: /ping
-@bot.tree.command(name="ping", description="Check the bot's latency")
-async def ping(interaction: discord.Interaction):
-    await interaction.response.send_message(f"Pong! Latency: {round(bot.latency * 1000)}ms")
-
-# Slash Command: /snipe
-@bot.tree.command(name="snipe", description="Displays the most recently deleted message")
-async def snipe_slash(interaction: discord.Interaction):
-    channel = interaction.channel
-    if channel.id not in sniped_messages or len(sniped_messages[channel.id]) == 0:
-        await interaction.response.send_message("No recently deleted messages in this channel.", ephemeral=True)
-        return
-
-    snipe = sniped_messages[channel.id][-1]
-    embed = discord.Embed(
-        title="📜 Sniped Message",
-        color=discord.Color.gold()
-    )
-    embed.add_field(name="**Content:**", value=snipe['content'] if snipe['content'] else "*No text content*", inline=False)
-    embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
-    embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-
-    # Handle attachments
-    if snipe["attachments"]:
-        for attachment_url in snipe["attachments"]:
-            if any(attachment_url.lower().endswith(ext) for ext in ["png", "jpg", "jpeg", "gif", "webp"]):
-                embed.set_image(url=attachment_url)  # Show image or GIF
-                break
-            else:
-                embed.add_field(name="**Attachment:**", value=f"[View Attachment]({attachment_url})", inline=False)
-
-    await interaction.response.send_message(embed=embed)
 
 # Command: ,snipe (Alias: ,s)
 @bot.command(aliases=["snipe"])
@@ -121,13 +87,18 @@ async def s(ctx, page: int = 1):
 
     snipe = sniped_messages[channel_id][-page]
     embed = discord.Embed(
-        title="📜 Sniped Message",
-        color=discord.Color.gold()
+        title=f"Deleted Message {page}/{len(sniped_messages[channel_id])}",
+        color=discord.Color.blue()
     )
-    embed.add_field(name="**Content:**", value=snipe['content'] if snipe['content'] else "*No text content*", inline=False)
-    embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
-    embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel_id])}")
+    embed.set_author(name=snipe['author'], icon_url=snipe['author'].avatar.url if snipe['author'].avatar else None)
+    embed.add_field(name="**Message Content:**", value=snipe['content'] if snipe['content'] else "*No text content*", inline=False)
+    embed.add_field(name="**Channel**", value=snipe['channel'].mention, inline=True)
+    embed.add_field(name="**Deleted By**", value=snipe['author'].mention, inline=True)
+    embed.add_field(
+        name="**Time**",
+        value=f"Sent: {snipe['time'].strftime('%m/%d/%Y, %I:%M:%S %p')}\nDeleted: {discord.utils.utcnow().strftime('%m/%d/%Y, %I:%M:%S %p')}",
+        inline=False
+    )
 
     # Handle attachments
     if snipe["attachments"]:
@@ -138,27 +109,8 @@ async def s(ctx, page: int = 1):
             else:
                 embed.add_field(name="**Attachment:**", value=f"[View Attachment]({attachment_url})", inline=False)
 
+    embed.set_footer(text=f"ID: {snipe['author'].id} • Use ,snipe {page - 1} or ,snipe {page + 1} to navigate | {discord.utils.utcnow().strftime('%m/%d/%Y %I:%M:%S %p')}")
     await ctx.send(embed=embed)
-
-# Command: ,mess
-@bot.command()
-@commands.has_permissions(manage_guild=True)
-async def mess(ctx, member: discord.Member, *, message):
-    try:
-        await member.send(message)
-        embed = discord.Embed(
-            title="✅ Message Sent",
-            description=f"Your message was successfully sent to {member.mention}.",
-            color=discord.Color.green()
-        )
-        await ctx.send(embed=embed)
-    except discord.Forbidden:
-        embed = discord.Embed(
-            title="❌ Message Failed",
-            description="Unable to send the message. The user might have DMs disabled.",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
 
 # Command: ,help
 @bot.command()
@@ -171,11 +123,6 @@ async def help(ctx):
     embed.add_field(
         name="`,snipe` or `,s [page]`",
         value="Displays recently deleted messages. Use pages to navigate through multiple deleted messages.\nExample: `,s 1`, `,s 2`",
-        inline=False
-    )
-    embed.add_field(
-        name="`,mess @User [message]`",
-        value="DMs the specified message to the user. Requires the 'Manage Server' permission.\nExample: `,mess @User Please follow the rules.`",
         inline=False
     )
     embed.add_field(
