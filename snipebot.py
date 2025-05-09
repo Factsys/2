@@ -84,17 +84,20 @@ async def s(ctx, page: int = 1):
         title="📜 Sniped Message",
         color=discord.Color.gold()
     )
+    # Add content or fallback to indicate no text content
     embed.add_field(name="**Content:**", value=snipe['content'] if snipe['content'] else "*No text content*", inline=False)
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel_id])}")
 
-    # Check for attachments (images or GIFs) and embed them
+    # Check for attachments (images, GIFs, or other media) and embed them
     if snipe["attachments"]:
         for attachment in snipe["attachments"]:
-            if any(attachment.url.endswith(ext) for ext in ["png", "jpg", "jpeg", "gif", "webp"]):
-                embed.set_image(url=attachment.url)  # Display the image or GIF visually
+            if any(attachment.url.endswith(ext) for ext in ["png", "jpg", "jpeg", "gif", "webp", "mp4"]):
+                embed.set_image(url=attachment.url)  # Display image or GIF visually
                 break  # Only show the first valid attachment
+            elif attachment.url:  # For non-image attachments, show the link
+                embed.add_field(name="**Attachment:**", value=f"[View Attachment]({attachment.url})", inline=False)
 
     await ctx.send(embed=embed)
 
