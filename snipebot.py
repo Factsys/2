@@ -32,8 +32,9 @@ sniped_messages = {}
 @bot.event
 async def on_ready():
     try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} slash commands!")
+        # Force resync all the slash commands (only once when the bot starts)
+        await bot.tree.sync(guild=discord.Object(id=your_guild_id))  # Add guild ID for quicker sync
+        print(f"Synced slash commands successfully!")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
     print(f"Bot is online as {bot.user}!")
