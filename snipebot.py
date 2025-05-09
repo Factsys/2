@@ -1,17 +1,32 @@
 import discord
 from discord.ext import commands
-from discord.utils import get
+import os
+from flask import Flask
+from threading import Thread
 
+# Flask app to keep the bot running on Render
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "SnipeBot is running!"
+
+def run_flask():
+    port = os.getenv("PORT", 8080)
+    server = Thread(target=app.run, kwargs={"host": "0.0.0.0", "port": port}, daemon=True)
+    server.start()
+
+# Enable intents for bot functionality
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
 intents.members = True
 
-# Set up the bot
+# Initialize the bot
 bot = commands.Bot(command_prefix=",", intents=intents)
 bot.remove_command('help')  # Remove default help command
 
-# Sniped messages storage
+# Store sniped messages
 sniped_messages = {}
 
 @bot.event
@@ -19,7 +34,7 @@ async def on_ready():
     print(f"Bot is online as {bot.user}!")
     await bot.change_presence(activity=discord.Game(name="Type ,help for commands"))
 
-# Event to store deleted messages
+# Event to capture deleted messages
 @bot.event
 async def on_message_delete(message):
     if message.author.bot:  # Ignore bot messages
@@ -27,10 +42,11 @@ async def on_message_delete(message):
     sniped_messages[message.channel.id] = {
         "content": message.content,
         "author": message.author,
+        "attachments": message.attachments,
         "time": message.created_at
     }
 
-# ,s or ,snipe command
+# Command to snipe deleted messages
 @bot.command(aliases=["snipe"])
 async def s(ctx, page: int = 1):
     channel_id = ctx.channel.id
@@ -42,14 +58,21 @@ async def s(ctx, page: int = 1):
     embed = discord.Embed(
         title="Sniped Message",
         description=f"**Content:** {snipe['content']}\n"
-                    f"**Author:** {snipe['author']}\n"
+                    f"**Deleted by:** {snipe['author']}\n"
                     f"**Time:** {snipe['time'].strftime('%Y-%m-%d %H:%M:%S')}",
         color=discord.Color.gold()
     )
     embed.set_footer(text="SnipeBot | Page 1 of 1")
+
+    # Check for attachments (images or GIFs) and embed them
+    if snipe["attachments"]:
+        for attachment in snipe["attachments"]:
+            if any(attachment.url.endswith(ext) for ext in ["png", "jpg", "jpeg", "gif", "webp"]):
+                embed.set_image(url=attachment.url)  # Display the image or GIF directly
+
     await ctx.send(embed=embed)
 
-# ,mess command
+# Command to DM a user
 @bot.command()
 @commands.has_any_role("Moderator", "Administrator", "Helper")
 async def mess(ctx, member: discord.Member, *, message):
@@ -59,7 +82,7 @@ async def mess(ctx, member: discord.Member, *, message):
     except discord.Forbidden:
         await ctx.send("Unable to send the message. The user might have DMs disabled.")
 
-# ,re command
+# Command to change a user's nickname
 @bot.command()
 @commands.has_any_role("Moderator", "Administrator")
 async def re(ctx, member: discord.Member, *, new_nickname):
@@ -69,7 +92,7 @@ async def re(ctx, member: discord.Member, *, new_nickname):
     except discord.Forbidden:
         await ctx.send("I don't have permission to change this user's nickname.")
 
-# ,help command
+# Help command
 @bot.command()
 async def help(ctx):
     embed = discord.Embed(
@@ -112,5 +135,7 @@ async def on_command_error(ctx, error):
     else:
         raise error  # Raise other errors for debugging
 
-# Run the bot
-bot.run("MTM2MTYwODE4OTk3MTM5ODg0Ng.Gbpk7e.9p70KSOCFjIdlUI0DPCKlo1t5yaiKfreKq2MLE")  # Replace YOUR_BOT_TOKEN with your bot token
+# Run Flask and the bot
+if __name__ == "__main__":
+    run_flask()  # Start the Flask server for Render
+    bot.run(os.getenv("DISCORD_TOKEN"))  # Use the token from environment variables
