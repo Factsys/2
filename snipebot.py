@@ -57,6 +57,35 @@ def get_media_url(content, attachments):
     
     return None
 
+# Custom check that allows administrators and owners to bypass permission requirements
+def has_permission_or_is_admin():
+    async def predicate(ctx):
+        # Check if user is guild owner
+        if ctx.guild and ctx.author.id == ctx.guild.owner_id:
+            return True
+        # Check if user is administrator
+        if ctx.guild and ctx.author.guild_permissions.administrator:
+            return True
+        # Otherwise check for the specific permission in the command
+        return await commands.has_permissions().predicate(ctx)
+    return commands.check(predicate)
+
+# Custom check for slash commands that allows administrators and owners to bypass
+def check_admin_or_permissions(**perms):
+    async def predicate(interaction: discord.Interaction):
+        # Check if user is guild owner
+        if interaction.guild and interaction.user.id == interaction.guild.owner_id:
+            return True
+        # Check if user is administrator
+        if interaction.guild and interaction.user.guild_permissions.administrator:
+            return True
+        # Otherwise check for the specific permission
+        for perm, value in perms.items():
+            if value and not getattr(interaction.user.guild_permissions, perm):
+                raise app_commands.MissingPermissions([perm])
+        return True
+    return app_commands.check(predicate)
+
 @bot.event
 async def on_ready():
     try:
@@ -118,9 +147,9 @@ async def snipe_slash(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="mess", description="DM a user with a message (admin only)")
+@bot.tree.command(name="mess", description="DM a user with a message (requires timeout members permission)")
 @app_commands.describe(member="User to DM", message="The message to send")
-@app_commands.checks.has_permissions(manage_guild=True)
+@check_admin_or_permissions(moderate_members=True)  # Admin/owner bypass check
 async def mess(interaction: discord.Interaction, member: discord.Member, message: str):
     try:
         await member.send(message)
@@ -134,6 +163,54 @@ async def mess(interaction: discord.Interaction, member: discord.Member, message
         embed = discord.Embed(
             title="❌ Failed to Send",
             description="Could not send DM. User may have DMs disabled.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="reset", description="Reset all sniped messages (requires administrator permission)")
+@check_admin_or_permissions(administrator=True)  # Admin/owner bypass check
+async def reset_slash(interaction: discord.Interaction):
+    channel_id = interaction.channel.id
+    if channel_id in sniped_messages:
+        sniped_messages[channel_id] = []
+        embed = discord.Embed(
+            title="🗑️ Snipe Reset",
+            description="All sniped messages in this channel have been cleared.",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed)
+    else:
+        embed = discord.Embed(
+            title="ℹ️ Nothing to Reset",
+            description="There were no sniped messages to clear.",
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="rename", description="Change a user's nickname (requires manage nicknames permission)")
+@app_commands.describe(member="User to rename", nickname="New nickname")
+@check_admin_or_permissions(manage_nicknames=True)  # Admin/owner bypass check
+async def rename_slash(interaction: discord.Interaction, member: discord.Member, nickname: str):
+    try:
+        old_nick = member.display_name
+        await member.edit(nick=nickname)
+        embed = discord.Embed(
+            title="✅ Nickname Changed",
+            description=f"Changed {member.mention}'s nickname from '{old_nick}' to '{nickname}'.",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed)
+    except discord.Forbidden:
+        embed = discord.Embed(
+            title="❌ Failed",
+            description="I don't have permission to change that user's nickname.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except discord.HTTPException as e:
+        embed = discord.Embed(
+            title="❌ Error",
+            description=f"Failed to change nickname: {str(e)}",
             color=discord.Color.red()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -156,9 +233,11 @@ async def help_slash(interaction: discord.Interaction):
         color=discord.Color.blurple()
     )
     embed.add_field(name="`,snipe` or `,s [page]`", value="Show recently deleted messages.", inline=False)
-    embed.add_field(name="`,mess @user [message]`", value="Send a DM (admin only).", inline=False)
+    embed.add_field(name="`,mess @user [message]`", value="Send a DM (requires timeout members permission).", inline=False)
+    embed.add_field(name="`,re @user [nickname]`", value="Change a user's nickname (requires manage nicknames permission).", inline=False)
+    embed.add_field(name="`,reset`", value="Reset all sniped messages (requires administrator permission).", inline=False)
     embed.add_field(name="`,help` or `/help`", value="Show this help message.", inline=False)
-    embed.set_footer(text="SnipeBot by Werzzzy")
+    embed.set_footer(text="SnipeBot by Werzzzy | Server owner and administrators bypass all permission requirements")
     await interaction.response.send_message(embed=embed)
 
 @bot.command(aliases=["snipe"])
@@ -206,7 +285,8 @@ async def s(ctx, page: int = 1):
     await ctx.send(embed=embed)
 
 @bot.command()
-@commands.has_permissions(manage_guild=True)
+@has_permission_or_is_admin()  # Admin/owner bypass
+@commands.has_permissions(moderate_members=True)
 async def mess(ctx, member: discord.Member, *, message):
     try:
         await member.send(message)
@@ -225,6 +305,55 @@ async def mess(ctx, member: discord.Member, *, message):
         await ctx.send(embed=embed)
 
 @bot.command()
+@has_permission_or_is_admin()  # Admin/owner bypass
+@commands.has_permissions(administrator=True)
+async def reset(ctx):
+    channel_id = ctx.channel.id
+    if channel_id in sniped_messages:
+        sniped_messages[channel_id] = []
+        embed = discord.Embed(
+            title="🗑️ Snipe Reset",
+            description="All sniped messages in this channel have been cleared.",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(
+            title="ℹ️ Nothing to Reset",
+            description="There were no sniped messages to clear.",
+            color=discord.Color.blue()
+        )
+        await ctx.send(embed=embed)
+
+@bot.command(aliases=["re"])
+@has_permission_or_is_admin()  # Admin/owner bypass
+@commands.has_permissions(manage_nicknames=True)
+async def rename(ctx, member: discord.Member, *, nickname):
+    try:
+        old_nick = member.display_name
+        await member.edit(nick=nickname)
+        embed = discord.Embed(
+            title="✅ Nickname Changed",
+            description=f"Changed {member.mention}'s nickname from '{old_nick}' to '{nickname}'.",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
+    except discord.Forbidden:
+        embed = discord.Embed(
+            title="❌ Failed",
+            description="I don't have permission to change that user's nickname.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+    except discord.HTTPException as e:
+        embed = discord.Embed(
+            title="❌ Error",
+            description=f"Failed to change nickname: {str(e)}",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+
+@bot.command()
 async def help(ctx):
     embed = discord.Embed(
         title="❓ SnipeBot Help",
@@ -232,10 +361,25 @@ async def help(ctx):
         color=discord.Color.blurple()
     )
     embed.add_field(name="`,snipe` or `,s [page]`", value="Show recently deleted messages.", inline=False)
-    embed.add_field(name="`,mess @user [message]`", value="Send a DM (admin only).", inline=False)
+    embed.add_field(name="`,mess @user [message]`", value="Send a DM (requires timeout members permission).", inline=False)
+    embed.add_field(name="`,re @user [nickname]`", value="Change a user's nickname (requires manage nicknames permission).", inline=False)
+    embed.add_field(name="`,reset`", value="Reset all sniped messages (requires administrator permission).", inline=False)
     embed.add_field(name="`,help` or `/help`", value="Show this help message.", inline=False)
-    embed.set_footer(text="SnipeBot by Werzzzy")
+    embed.set_footer(text="SnipeBot by Werzzzy | Server owner and administrators bypass all permission requirements")
     await ctx.send(embed=embed)
+
+# Add error handlers for permission errors
+@mess.error
+@rename.error
+@reset.error
+async def permission_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        embed = discord.Embed(
+            title="❌ Permission Denied",
+            description="You don't have the required permissions to use this command.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed, delete_after=10)
 
 # Start everything
 if __name__ == "__main__":
