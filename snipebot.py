@@ -31,7 +31,7 @@ sniped_messages = {}
 @bot.event
 async def on_ready():
     try:
-        synced = await bot.tree.sync()
+        synced = await bot.tree.sync()  # Sync slash commands with Discord
         print(f"Synced {len(synced)} slash commands!")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
@@ -43,20 +43,13 @@ async def on_message_delete(message):
     if message.author.bot:
         return
 
-    embed_url = None
-    # Attempt to get embed image/gif
-    if message.embeds:
-        for embed in message.embeds:
-            if embed.image and embed.image.url:
-                embed_url = embed.image.url
-            elif embed.thumbnail and embed.thumbnail.url:
-                embed_url = embed.thumbnail.url
-
-    sniped_messages.setdefault(message.channel.id, []).append({
+    if message.channel.id not in sniped_messages:
+        sniped_messages[message.channel.id] = []
+    
+    sniped_messages[message.channel.id].append({
         "content": message.content,
         "author": message.author,
         "attachments": message.attachments,
-        "embed_url": embed_url,
         "time": message.created_at
     })
 
@@ -85,13 +78,11 @@ async def snipe_slash(interaction: discord.Interaction):
     if snipe["attachments"]:
         for attachment in snipe["attachments"]:
             url = attachment.url
-            if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=url)
-                break
-            elif url:
+            try:
+                embed.set_image(url=url)  # Try to display image if it's one
+                break  # Only show one visual image
+            except Exception:
                 embed.add_field(name="**Attachment:**", value=f"[View Attachment]({url})", inline=False)
-    elif snipe.get("embed_url"):
-        embed.set_image(url=snipe["embed_url"])
 
     await interaction.response.send_message(embed=embed)
 
@@ -159,13 +150,11 @@ async def s(ctx, page: int = 1):
     if snipe["attachments"]:
         for attachment in snipe["attachments"]:
             url = attachment.url
-            if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=url)
-                break
-            elif url:
+            try:
+                embed.set_image(url=url)  # Try to display image if it's one
+                break  # Only show one visual image
+            except Exception:
                 embed.add_field(name="**Attachment:**", value=f"[View Attachment]({url})", inline=False)
-    elif snipe.get("embed_url"):
-        embed.set_image(url=snipe["embed_url"])
 
     await ctx.send(embed=embed)
 
