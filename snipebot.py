@@ -45,7 +45,7 @@ async def on_message_delete(message):
 
     if message.channel.id not in sniped_messages:
         sniped_messages[message.channel.id] = []
-    
+
     sniped_messages[message.channel.id].append({
         "content": message.content,
         "author": message.author,
@@ -56,12 +56,10 @@ async def on_message_delete(message):
     if len(sniped_messages[message.channel.id]) > 10:
         sniped_messages[message.channel.id].pop(0)
 
-# Slash Command: /ping
 @bot.tree.command(name="ping", description="Check the bot's latency")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"Pong! Latency: {round(bot.latency * 1000)}ms")
 
-# Slash Command: /snipe
 @bot.tree.command(name="snipe", description="Displays the most recently deleted message")
 async def snipe_slash(interaction: discord.Interaction):
     channel = interaction.channel
@@ -71,7 +69,7 @@ async def snipe_slash(interaction: discord.Interaction):
 
     snipe = sniped_messages[channel.id][-1]
     embed = discord.Embed(title="📜 Sniped Message", color=discord.Color.gold())
-    embed.add_field(name="**Content:**", value=snipe['content'] or "*No text content*", inline=False)
+    embed.add_field(name="**Content:**", value=snipe['content'].strip() or "*No text content*", inline=False)
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
 
@@ -81,33 +79,9 @@ async def snipe_slash(interaction: discord.Interaction):
             if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")) or any(x in url for x in ["tenor.com", "giphy.com", "twitter.com"]):
                 embed.set_image(url=url)
                 break
-            elif url:
-                embed.add_field(name="**Attachment:**", value=f"[View Attachment]({url})", inline=False)
 
     await interaction.response.send_message(embed=embed)
 
-# Slash Command: /mess
-@bot.tree.command(name="mess", description="DM a user with a message (admin only)")
-@app_commands.describe(member="User to DM", message="The message to send")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def mess(interaction: discord.Interaction, member: discord.Member, message: str):
-    try:
-        await member.send(message)
-        embed = discord.Embed(
-            title="✅ Message Sent",
-            description=f"Message sent to {member.mention}.",
-            color=discord.Color.green()
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    except discord.Forbidden:
-        embed = discord.Embed(
-            title="❌ Failed to Send",
-            description="Could not send DM. User may have DMs disabled.",
-            color=discord.Color.red()
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-# Slash Command: /maintainer
 @bot.tree.command(name="maintainer", description="Shows who maintains the bot")
 async def maintainer(interaction: discord.Interaction):
     embed = discord.Embed(
@@ -118,7 +92,20 @@ async def maintainer(interaction: discord.Interaction):
     embed.set_footer(text="SnipeBot by Werzzzy")
     await interaction.response.send_message(embed=embed)
 
-# Text Command: ,snipe / ,s
+@bot.tree.command(name="help", description="Shows the help message")
+async def help_slash(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="❓ SnipeBot Help",
+        description="Available commands:",
+        color=discord.Color.blurple()
+    )
+    embed.add_field(name="`,snipe` or `,s [page]`", value="Show recently deleted messages.", inline=False)
+    embed.add_field(name="`/snipe`", value="Slash version of the snipe command.", inline=False)
+    embed.add_field(name="`,mess` or `/mess`", value="Send a DM (admin only).", inline=False)
+    embed.add_field(name="`,help` or `/help`", value="Show this help message.", inline=False)
+    embed.set_footer(text="SnipeBot by Werzzzy")
+    await interaction.response.send_message(embed=embed)
+
 @bot.command(aliases=["snipe"])
 async def s(ctx, page: int = 1):
     channel_id = ctx.channel.id
@@ -142,7 +129,7 @@ async def s(ctx, page: int = 1):
 
     snipe = sniped_messages[channel_id][-page]
     embed = discord.Embed(title="📜 Sniped Message", color=discord.Color.gold())
-    embed.add_field(name="**Content:**", value=snipe['content'] or "*No text content*", inline=False)
+    embed.add_field(name="**Content:**", value=snipe['content'].strip() or "*No text content*", inline=False)
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel_id])}")
@@ -153,12 +140,9 @@ async def s(ctx, page: int = 1):
             if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")) or any(x in url for x in ["tenor.com", "giphy.com", "twitter.com"]):
                 embed.set_image(url=url)
                 break
-            elif url:
-                embed.add_field(name="**Attachment:**", value=f"[View Attachment]({url})", inline=False)
 
     await ctx.send(embed=embed)
 
-# Text Command: ,mess
 @bot.command()
 @commands.has_permissions(manage_guild=True)
 async def mess(ctx, member: discord.Member, *, message):
@@ -178,7 +162,26 @@ async def mess(ctx, member: discord.Member, *, message):
         )
         await ctx.send(embed=embed)
 
-# Text Command: ,help
+@bot.tree.command(name="mess", description="DM a user with a message (admin only)")
+@app_commands.describe(member="User to DM", message="The message to send")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def mess_slash(interaction: discord.Interaction, member: discord.Member, message: str):
+    try:
+        await member.send(message)
+        embed = discord.Embed(
+            title="✅ Message Sent",
+            description=f"Message sent to {member.mention}.",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except discord.Forbidden:
+        embed = discord.Embed(
+            title="❌ Failed to Send",
+            description="Could not send DM. User may have DMs disabled.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 @bot.command()
 async def help(ctx):
     embed = discord.Embed(
@@ -187,12 +190,12 @@ async def help(ctx):
         color=discord.Color.blurple()
     )
     embed.add_field(name="`,snipe` or `,s [page]`", value="Show recently deleted messages.", inline=False)
-    embed.add_field(name="`,mess @user [message]`", value="Send a DM (admin only).", inline=False)
-    embed.add_field(name="`,help`", value="Show this help message.", inline=False)
+    embed.add_field(name="`/snipe`", value="Slash version of the snipe command.", inline=False)
+    embed.add_field(name="`,mess` or `/mess`", value="Send a DM (admin only).", inline=False)
+    embed.add_field(name="`,help` or `/help`", value="Show this help message.", inline=False)
     embed.set_footer(text="SnipeBot by Werzzzy")
     await ctx.send(embed=embed)
 
-# Start everything
 if __name__ == "__main__":
     run_flask()
     bot.run(os.getenv("DISCORD_TOKEN"))
