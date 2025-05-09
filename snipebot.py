@@ -5,6 +5,7 @@ import os
 from flask import Flask
 from threading import Thread
 import aiohttp
+import io
 
 # Flask app to keep the bot running on Render
 app = Flask('')
@@ -14,17 +15,16 @@ def home():
     return "SnipeBot is running!"
 
 def run_flask():
-    port = os.getenv("PORT", 8080)
+    port = int(os.getenv("PORT", 8080))
     server = Thread(target=app.run, kwargs={"host": "0.0.0.0", "port": port}, daemon=True)
     server.start()
 
-# Enable intents for bot functionality
+# Enable intents
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
 intents.members = True
 
-# Initialize bot
 bot = commands.Bot(command_prefix=",", intents=intents)
 bot.remove_command('help')
 sniped_messages = {}
@@ -47,7 +47,6 @@ async def on_message_delete(message):
     if message.channel.id not in sniped_messages:
         sniped_messages[message.channel.id] = []
 
-    # Save attachment bytes
     files = []
     for attachment in message.attachments:
         try:
@@ -55,15 +54,17 @@ async def on_message_delete(message):
                 async with session.get(attachment.url) as resp:
                     if resp.status == 200:
                         data = await resp.read()
-                        files.append(discord.File(fp=io.BytesIO(data), filename=attachment.filename))
-        except Exception:
+                        files.append({
+                            "fp": io.BytesIO(data),
+                            "filename": attachment.filename
+                        })
+        except:
             continue
 
     sniped_messages[message.channel.id].append({
         "content": message.content,
         "author": message.author,
         "attachments": files,
-        "attachment_urls": [a.url for a in message.attachments],
         "time": message.created_at
     })
 
@@ -88,8 +89,10 @@ async def snipe_slash(interaction: discord.Interaction):
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
 
     if snipe["attachments"]:
-        embed.set_image(url=snipe["attachment_urls"][0])
-        await interaction.response.send_message(embed=embed)
+        file_data = snipe["attachments"][0]
+        file = discord.File(fp=file_data["fp"], filename=file_data["filename"])
+        embed.set_image(url=f"attachment://{file_data['filename']}")
+        await interaction.response.send_message(embed=embed, file=file)
     elif "tenor.com/view/" in snipe["content"] or snipe["content"].endswith(".gif"):
         embed.set_image(url=snipe["content"])
         await interaction.response.send_message(embed=embed)
@@ -125,11 +128,15 @@ async def s(ctx, page: int = 1):
     embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel_id])}")
 
     if snipe["attachments"]:
-        embed.set_image(url=snipe["attachment_urls"][0])
+        file_data = snipe["attachments"][0]
+        file = discord.File(fp=file_data["fp"], filename=file_data["filename"])
+        embed.set_image(url=f"attachment://{file_data['filename']}")
+        await ctx.send(embed=embed, file=file)
     elif "tenor.com/view/" in snipe["content"] or snipe["content"].endswith(".gif"):
         embed.set_image(url=snipe["content"])
-
-    await ctx.send(embed=embed)
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send(embed=embed)
 
 @bot.command()
 @commands.has_permissions(manage_guild=True)
@@ -172,10 +179,9 @@ async def help(ctx):
         value="Displays this help message.",
         inline=False
     )
-    embed.set_footer(text="SnipeBot | Werzzzy Discord Bot")
+    embed.set_footer(text="SnipeBot | Werzzzy🥀 Discord Bot")
     await ctx.send(embed=embed)
 
-# Run Flask and the bot
 if __name__ == "__main__":
     run_flask()
     bot.run(os.getenv("DISCORD_TOKEN"))
