@@ -4,6 +4,8 @@ from discord import app_commands
 import os
 from flask import Flask
 from threading import Thread
+import aiohttp
+import io
 
 # Flask app to keep the bot running on Render
 app = Flask('')
@@ -17,7 +19,7 @@ def run_flask():
     server = Thread(target=app.run, kwargs={"host": "0.0.0.0", "port": port}, daemon=True)
     server.start()
 
-# Enable intents for bot functionality
+# Enable intents
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
@@ -25,37 +27,40 @@ intents.members = True
 
 # Initialize bot
 bot = commands.Bot(command_prefix=",", intents=intents)
-bot.remove_command('help')  # Remove default help command
+bot.remove_command('help')  # Remove the default help command
 sniped_messages = {}  # Store deleted messages
 
 @bot.event
 async def on_ready():
     try:
-        synced = await bot.tree.sync()  # Sync slash commands with Discord
+        synced = await bot.tree.sync()
         print(f"Synced {len(synced)} slash commands!")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
     print(f"Bot is online as {bot.user}!")
     await bot.change_presence(activity=discord.Game(name="Type /help or ,help for commands"))
 
-# Event to capture deleted messages
 @bot.event
 async def on_message_delete(message):
-    if message.author.bot:  # Ignore bot messages
+    if message.author.bot:
         return
 
-    # Store the deleted message in the channel's sniped messages list
+    # Initialize sniped messages for the channel if not done already
     if message.channel.id not in sniped_messages:
         sniped_messages[message.channel.id] = []
-    
+
+    # Collect attachment URLs
+    attachment_urls = [attachment.url for attachment in message.attachments]
+
+    # Save the deleted message
     sniped_messages[message.channel.id].append({
         "content": message.content,
         "author": message.author,
-        "attachments": message.attachments,
+        "attachments": attachment_urls,
         "time": message.created_at
     })
 
-    # Keep only the last 10 sniped messages per channel
+    # Keep only the last 10 sniped messages
     if len(sniped_messages[message.channel.id]) > 10:
         sniped_messages[message.channel.id].pop(0)
 
@@ -81,12 +86,14 @@ async def snipe_slash(interaction: discord.Interaction):
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
 
-    # Check for attachments and add them to the embed
+    # Handle attachments
     if snipe["attachments"]:
-        for attachment in snipe["attachments"]:
-            if any(attachment.url.endswith(ext) for ext in ["png", "jpg", "jpeg", "gif", "webp"]):
-                embed.set_image(url=attachment.url)
+        for attachment_url in snipe["attachments"]:
+            if any(attachment_url.lower().endswith(ext) for ext in ["png", "jpg", "jpeg", "gif", "webp"]):
+                embed.set_image(url=attachment_url)  # Show image or GIF
                 break
+            else:
+                embed.add_field(name="**Attachment:**", value=f"[View Attachment]({attachment_url})", inline=False)
 
     await interaction.response.send_message(embed=embed)
 
@@ -103,7 +110,6 @@ async def s(ctx, page: int = 1):
         await ctx.send(embed=embed)
         return
 
-    # Ensure the requested page is within range
     if page < 1 or page > len(sniped_messages[channel_id]):
         embed = discord.Embed(
             title="⚠️ Invalid Page Number",
@@ -113,7 +119,6 @@ async def s(ctx, page: int = 1):
         await ctx.send(embed=embed)
         return
 
-    # Get the sniped message for the requested page
     snipe = sniped_messages[channel_id][-page]
     embed = discord.Embed(
         title="📜 Sniped Message",
@@ -124,18 +129,18 @@ async def s(ctx, page: int = 1):
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel_id])}")
 
-    # Check for attachments (images, GIFs, or other media) and embed them
+    # Handle attachments
     if snipe["attachments"]:
-        for attachment in snipe["attachments"]:
-            if any(attachment.url.endswith(ext) for ext in ["png", "jpg", "jpeg", "gif", "webp"]):
-                embed.set_image(url=attachment.url)
+        for attachment_url in snipe["attachments"]:
+            if any(attachment_url.lower().endswith(ext) for ext in ["png", "jpg", "jpeg", "gif", "webp"]):
+                embed.set_image(url=attachment_url)  # Show image or GIF
                 break
-            elif attachment.url:
-                embed.add_field(name="**Attachment:**", value=f"[View Attachment]({attachment.url})", inline=False)
+            else:
+                embed.add_field(name="**Attachment:**", value=f"[View Attachment]({attachment_url})", inline=False)
 
     await ctx.send(embed=embed)
 
-# Command: ,mess (DM a user)
+# Command: ,mess
 @bot.command()
 @commands.has_permissions(manage_guild=True)
 async def mess(ctx, member: discord.Member, *, message):
@@ -178,10 +183,10 @@ async def help(ctx):
         value="Displays this help message.",
         inline=False
     )
-    embed.set_footer(text="SnipeBot | Werzzzy Discord Bot")
+    embed.set_footer(text="SnipeBot | Premium Discord Bot")
     await ctx.send(embed=embed)
 
-# Run Flask and the bot
+# Run Flask and bot
 if __name__ == "__main__":
-    run_flask()  # Start the Flask server for Render
-    bot.run(os.getenv("DISCORD_TOKEN"))  # Use the token from environment variables
+    run_flask()
+    bot.run(os.getenv("DISCORD_TOKEN"))
