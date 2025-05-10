@@ -22,8 +22,14 @@ def home():
     return "SnipeBot is running!"
 
 def run_flask():
-    port = int(os.getenv("PORT", 8080))
-    server = Thread(target=app.run, kwargs={"host": "0.0.0.0", "port": port}, daemon=True)
+    # This is the important part for Render
+    port = int(os.environ.get("PORT", 10000))  # Use environment PORT or 10000 as fallback
+    app.run(host="0.0.0.0", port=port)
+
+# Start the Flask server in a thread
+def keep_alive():
+    server = Thread(target=run_flask)
+    server.daemon = True
     server.start()
 
 # Enable intents
