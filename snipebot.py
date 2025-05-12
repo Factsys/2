@@ -18,41 +18,76 @@ def run_flask():
     server = Thread(target=app.run, kwargs={"host": "0.0.0.0", "port": port}, daemon=True)
     server.start()
 
-# List of offensive words to be filtered
-OFFENSIVE_WORDS = [
-    "nigga", "nigger", "sex", "porn", "fuck", "shit", "ass", "bitch",
-    "dick", "pussy", "cunt", "whore", "slut", "bastard", "retard",
-    "faggot", "fag", "queer", "homo", "kill yourself", "kys"
-]
-
-# Create a regex pattern for filtering offensive words
-def create_filter_pattern():
-    # Sort by length (longest first) to prevent substring matches
-    sorted_words = sorted(OFFENSIVE_WORDS, key=len, reverse=True)
+# List of regex patterns for filtered/bad words
+FILTER_PATTERNS = [
+    # n-word variations
+    r"n[\W_]*[i1l|!][\W_]*[gq69][\W_]*[gq69a@4][\W_]*[a@4]?",
     
-    # Create a pattern that matches whole words, ignoring case
-    pattern = r'\b(' + '|'.join(re.escape(word) for word in sorted_words) + r')\b'
-    return re.compile(pattern, re.IGNORECASE)
-
-# Compile the pattern once
-FILTER_PATTERN = create_filter_pattern()
+    # f-word variations
+    r"f[\W_]*[uüv][\W_]*[c(kq)][\W_]*k?",
+    
+    # r-word variations
+    r"r[\W_]*[e3][\W_]*[t+][\W_]*[a@4][\W_]*[r]+[d]*",
+    
+    # b-word
+    r"b[\W_]*[i1!|][\W_]*[t+][\W_]*[c(kq)][\W_]*[h]+",
+    
+    # s-word
+    r"s[\W_]*[h][\W_]*[i1!|][\W_]*[t+]",
+    
+    # a-hole
+    r"a[\W_]*[s$]{2,}[\W_]*[h]*[\W_]*[o0]*[\W_]*[l1!|]*[\W_]*[e]*",
+    
+    # general profanity
+    r"d[\W_]*[i1!|][\W_]*[c(kq)][\W_]*[k]+",
+    r"c[\W_]*[uüv][\W_]*[n][\W_]*[t]+",
+    
+    # Additional offensive terms
+    r"p[\W_]*[o0][\W_]*[r]+[\W_]*[n]+",
+    r"w[\W_]*[h][\W_]*[o0][\W_]*[r]+[\W_]*[e3]+",
+    r"s[\W_]*[l1][\W_]*[uüv][\W_]*[t]+",
+    r"f[\W_]*[a@4][\W_]*[gq69]+",
+    r"k[\W_]*[i1l|!][\W_]*[l1][\W_]*[l1][\W_]*y[\W_]*[o0][\W_]*[uüv][\W_]*[r]+[\W_]*[s$][\W_]*[e3][\W_]*[l1]+[f]+",
+    r"k[\W_]*y[\W_]*[s$]+"
+]
 
 # Check if content contains offensive words
 def is_offensive_content(content):
     if not content:
         return False
-    return bool(FILTER_PATTERN.search(content))
+    
+    for pattern in FILTER_PATTERNS:
+        if re.search(pattern, content, re.IGNORECASE):
+            return True
+    
+    return False
 
 # Replace offensive words with asterisks
 def filter_content(content):
     if not content:
         return content
     
-    def replace_with_asterisks(match):
-        word = match.group(0)
-        return '*' * len(word)
+    # First, find all matches to know how many characters to replace
+    replacements = []
     
-    return FILTER_PATTERN.sub(replace_with_asterisks, content)
+    for pattern in FILTER_PATTERNS:
+        for match in re.finditer(pattern, content, re.IGNORECASE):
+            start, end = match.span()
+            word = content[start:end]
+            replacements.append((start, end, word))
+    
+    # Sort replacements by start position, in reverse order
+    # (to avoid changing positions when replacing)
+    replacements.sort(key=lambda x: x[0], reverse=True)
+    
+    # Make a copy of the content
+    censored = content
+    
+    # Replace each match with asterisks
+    for start, end, word in replacements:
+        censored = censored[:start] + '*' * len(word) + censored[end:]
+    
+    return censored
 
 # Enable intents
 intents = discord.Intents.default()
