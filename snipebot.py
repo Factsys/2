@@ -18,37 +18,50 @@ def run_flask():
     server = Thread(target=app.run, kwargs={"host": "0.0.0.0", "port": port}, daemon=True)
     server.start()
 
-# List of regex patterns for filtered/bad words
+# Step 1: Normalize weird characters to plain letters
+def normalize_text(text: str) -> str:
+    if not text:
+        return ""
+    
+    substitutions = {
+        '@': 'a', '4': 'a',
+        '1': 'i', '!': 'i', '|': 'i',
+        '3': 'e',
+        '$': 's',
+        '0': 'o',
+        '+': 't',
+        '7': 't',
+        '9': 'g',
+        '*': '',
+        '.': '',
+        '/': '',
+        '\\': '',
+        '-': '',
+        '_': '',
+        ',': '',
+        ' ': '',
+    }
+    for symbol, replacement in substitutions.items():
+        text = text.replace(symbol, replacement)
+    return text.lower()
+
+# Step 2: Offensive word filters (regex-based)
 FILTER_PATTERNS = [
-    # n-word variations
-    r"n[\W_]*[i1l|!][\W_]*[gq69][\W_]*[gq69a@4][\W_]*[a@4]?",
-    
-    # f-word variations
-    r"f[\W_]*[uüv][\W_]*[c(kq)][\W_]*k?",
-    
-    # r-word variations
-    r"r[\W_]*[e3][\W_]*[t+][\W_]*[a@4][\W_]*[r]+[d]*",
-    
-    # b-word
-    r"b[\W_]*[i1!|][\W_]*[t+][\W_]*[c(kq)][\W_]*[h]+",
-    
-    # s-word
-    r"s[\W_]*[h][\W_]*[i1!|][\W_]*[t+]",
-    
-    # a-hole
-    r"a[\W_]*[s$]{2,}[\W_]*[h]*[\W_]*[o0]*[\W_]*[l1!|]*[\W_]*[e]*",
-    
-    # general profanity
-    r"d[\W_]*[i1!|][\W_]*[c(kq)][\W_]*[k]+",
-    r"c[\W_]*[uüv][\W_]*[n][\W_]*[t]+",
-    
-    # Additional offensive terms
-    r"p[\W_]*[o0][\W_]*[r]+[\W_]*[n]+",
-    r"w[\W_]*[h][\W_]*[o0][\W_]*[r]+[\W_]*[e3]+",
-    r"s[\W_]*[l1][\W_]*[uüv][\W_]*[t]+",
-    r"f[\W_]*[a@4][\W_]*[gq69]+",
-    r"k[\W_]*[i1l|!][\W_]*[l1][\W_]*[l1][\W_]*y[\W_]*[o0][\W_]*[uüv][\W_]*[r]+[\W_]*[s$][\W_]*[e3][\W_]*[l1]+[f]+",
-    r"k[\W_]*y[\W_]*[s$]+"
+    r"n[i1l][g69q][g69a@4][a@4]?",     # n-word
+    r"f[uüv][c(kq)][k]?",              # f-word
+    r"r[e3][t+][a@4][r]{1,2}[d]*",     # r-word
+    r"b[i1!|][t+][c(kq)][h]+",         # b-word
+    r"s[h][i1!|][t+]",                 # shit
+    r"r[a@4][p][e3]",                  # rape
+    r"a[s$]{2,}[h]*[o0]*[l1!|]*[e]*",  # a-hole
+    r"d[i1!|][c(kq)][k]+",             # dick
+    r"c[uüv][n][t]+",                  # c-word
+    r"p[o0][r]+[n]+",                  # porn
+    r"w[h][o0][r]+[e3]+",              # whore
+    r"s[l1][uüv][t]+",                 # slut
+    r"f[a@4][gq69]+",                  # fag
+    r"k[i1l|!][l1][l1]y[o0][uüv][r]+[s$][e3][l1]+[f]+", # kill yourself
+    r"ky[s$]+"                         # kys
 ]
 
 # Check if content contains offensive words
@@ -56,8 +69,9 @@ def is_offensive_content(content):
     if not content:
         return False
     
+    normalized = normalize_text(content)
     for pattern in FILTER_PATTERNS:
-        if re.search(pattern, content, re.IGNORECASE):
+        if re.search(pattern, normalized, flags=re.IGNORECASE):
             return True
     
     return False
@@ -67,27 +81,17 @@ def filter_content(content):
     if not content:
         return content
     
-    # First, find all matches to know how many characters to replace
-    replacements = []
+    # Find all words in the content
+    words = []
+    for word in content.split():
+        # Check if the normalized version of the word matches any filter
+        if is_offensive_content(word):
+            # Replace the entire word with asterisks
+            words.append('*' * len(word))
+        else:
+            words.append(word)
     
-    for pattern in FILTER_PATTERNS:
-        for match in re.finditer(pattern, content, re.IGNORECASE):
-            start, end = match.span()
-            word = content[start:end]
-            replacements.append((start, end, word))
-    
-    # Sort replacements by start position, in reverse order
-    # (to avoid changing positions when replacing)
-    replacements.sort(key=lambda x: x[0], reverse=True)
-    
-    # Make a copy of the content
-    censored = content
-    
-    # Replace each match with asterisks
-    for start, end, word in replacements:
-        censored = censored[:start] + '*' * len(word) + censored[end:]
-    
-    return censored
+    return ' '.join(words)
 
 # Enable intents
 intents = discord.Intents.default()
@@ -537,7 +541,7 @@ async def help_slash(interaction: discord.Interaction):
     embed.add_field(name="`,snipeedit` or `/snipeedit [page]`", value="Show edited messages with content filtering.", inline=False)
     embed.add_field(name="`,snipeeditforce` or `/snipeeditforce [page]`", value="Show unfiltered edited messages (moderator only).", inline=False)
     embed.add_field(name="`,mess @user [message]` or `/mess`", value="Send a DM to a user (requires timeout members permission).", inline=False)
-    embed.add_field(name="`,re @user [nickname]` or `/rename`", value="Change a user's nickname (requires manage nicknames permission).", inline=False)
+    embed.add_field(name="`,rename @user [nickname]` or `/rename`", value="Change a user's nickname (requires manage nicknames permission).", inline=False)
     embed.add_field(name="`,reset` or `/reset`", value="Reset all sniped and edited messages (requires administrator permission).", inline=False)
     embed.add_field(name="`,filter` or `/filter`", value="Check content filter status.", inline=False)
     embed.add_field(name="`,help` or `/help`", value="Show this help message.", inline=False)
@@ -684,7 +688,7 @@ async def snipeedit(ctx, page: int = 1):
     embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot | Page {page} of {len(edited_messages[channel_id])}")
-
+    
     # Handle attachments and media links
     media_url = get_media_url(edit['after_content'], edit['attachments'])
     
@@ -698,10 +702,10 @@ async def snipeedit(ctx, page: int = 1):
             if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
                 embed.set_image(url=attachment.url)
                 break
-
+    
     await ctx.send(embed=embed)
 
-@bot.command()
+@bot.command(aliases=["sef"])
 @is_moderator()
 async def snipeeditforce(ctx, page: int = 1):
     channel_id = ctx.channel.id
@@ -739,7 +743,7 @@ async def snipeeditforce(ctx, page: int = 1):
     embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(edited_messages[channel_id])}")
-
+    
     # Handle attachments and media links
     media_url = get_media_url(edit['after_content'], edit['attachments'])
     
@@ -753,17 +757,17 @@ async def snipeeditforce(ctx, page: int = 1):
             if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
                 embed.set_image(url=attachment.url)
                 break
-
+    
     await ctx.send(embed=embed)
 
 @bot.command()
+@commands.has_permissions(moderate_members=True)
 async def mess(ctx, member: discord.Member, *, message):
-    # Allow sending messages from any channel where the bot has access to that member
     try:
         await member.send(message)
         embed = discord.Embed(
             title="✅ Message Sent",
-            description=f"Your message was sent to {member.mention}.",
+            description=f"Message sent to {member.mention}.",
             color=discord.Color.green()
         )
         await ctx.send(embed=embed)
@@ -774,16 +778,8 @@ async def mess(ctx, member: discord.Member, *, message):
             color=discord.Color.red()
         )
         await ctx.send(embed=embed)
-    except Exception as e:
-        embed = discord.Embed(
-            title="❌ Error",
-            description=f"An error occurred: {str(e)}",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
 
 @bot.command()
-@has_permission_or_is_admin()  # Admin/owner bypass
 @commands.has_permissions(administrator=True)
 async def reset(ctx):
     channel_id = ctx.channel.id
@@ -814,7 +810,6 @@ async def reset(ctx):
         await ctx.send(embed=embed)
 
 @bot.command(aliases=["re"])
-@has_permission_or_is_admin()  # Admin/owner bypass
 @commands.has_permissions(manage_nicknames=True)
 async def rename(ctx, member: discord.Member, *, nickname):
     try:
@@ -850,55 +845,58 @@ async def filter(ctx):
     )
     embed.add_field(
         name="Moderator Commands",
-        value="Moderators can use `,snipeforce` and `,snipeeditforce` to view unfiltered content.",
+        value="Moderators can use `/snipeforce` and `/snipeeditforce` to view unfiltered content.",
         inline=False
     )
     await ctx.send(embed=embed)
 
-@bot.command()
+@bot.command(aliases=["h"])
 async def help(ctx):
     embed = discord.Embed(
         title="❓ SnipeBot Help",
         description="Available commands:",
         color=discord.Color.blurple()
     )
-    embed.add_field(name="`,snipe` or `,s [page]`", value="Show recently deleted messages with content filtering.", inline=False)
-    embed.add_field(name="`,snipeforce [page]`", value="Show unfiltered deleted messages (moderator only).", inline=False)
-    embed.add_field(name="`,snipeedit` or `,se [page]`", value="Show edited messages with content filtering.", inline=False)
-    embed.add_field(name="`,snipeeditforce [page]`", value="Show unfiltered edited messages (moderator only).", inline=False)
-    embed.add_field(name="`,mess @user [message]`", value="Send a DM to a user.", inline=False)
-    embed.add_field(name="`,re @user [nickname]`", value="Change a user's nickname (requires manage nicknames permission).", inline=False)
-    embed.add_field(name="`,reset`", value="Reset all sniped and edited messages (requires administrator permission).", inline=False)
-    embed.add_field(name="`,filter`", value="Check content filter status.", inline=False)
-    embed.add_field(name="`,help`", value="Show this help message.", inline=False)
+    embed.add_field(name="`,snipe` or `/snipe [page]`", value="Show recently deleted messages with content filtering.", inline=False)
+    embed.add_field(name="`,snipeforce` or `/snipeforce [page]`", value="Show unfiltered deleted messages (moderator only).", inline=False)
+    embed.add_field(name="`,snipeedit` or `/snipeedit [page]`", value="Show edited messages with content filtering.", inline=False)
+    embed.add_field(name="`,snipeeditforce` or `/snipeeditforce [page]`", value="Show unfiltered edited messages (moderator only).", inline=False)
+    embed.add_field(name="`,mess @user [message]` or `/mess`", value="Send a DM to a user (requires timeout members permission).", inline=False)
+    embed.add_field(name="`,rename @user [nickname]` or `/rename`", value="Change a user's nickname (requires manage nicknames permission).", inline=False)
+    embed.add_field(name="`,reset` or `/reset`", value="Reset all sniped and edited messages (requires administrator permission).", inline=False)
+    embed.add_field(name="`,filter` or `/filter`", value="Check content filter status.", inline=False)
+    embed.add_field(name="`,help` or `/help`", value="Show this help message.", inline=False)
     embed.set_footer(text="SnipeBot by Werzzzy | Server owner and administrators bypass all permission requirements")
     await ctx.send(embed=embed)
 
-# Add error handlers for permission errors
-@snipeforce.error
-@snipeeditforce.error
-async def moderator_error(ctx, error):
-    if isinstance(error, commands.CheckFailure):
-        embed = discord.Embed(
-            title="❌ Permission Denied",
-            description="Only moderators and administrators can use this command.",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed, delete_after=10)
-
 @mess.error
-@rename.error
 @reset.error
-async def permission_error(ctx, error):
+@rename.error
+async def moderator_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         embed = discord.Embed(
             title="❌ Permission Denied",
             description="You don't have the required permissions to use this command.",
             color=discord.Color.red()
         )
-        await ctx.send(embed=embed, delete_after=10)
+        await ctx.send(embed=embed)
 
-# Start everything
+@snipeforce.error
+@snipeeditforce.error
+async def permission_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        embed = discord.Embed(
+            title="❌ Permission Denied",
+            description="Only moderators and administrators can use this command.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+
+# Start the flask server and bot
 if __name__ == "__main__":
     run_flask()
-    bot.run(os.getenv("DISCORD_TOKEN"))
+    token = os.environ.get("DISCORD_TOKEN")
+    if not token:
+        print("Error: No Discord token found. Please set the DISCORD_TOKEN environment variable.")
+    else:
+        bot.run(token)
