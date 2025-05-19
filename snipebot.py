@@ -2,27 +2,15 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import os
-import re
-import aiohttp
-import logging
-import datetime
-import asyncio
-from typing import Dict, List, Optional, Tuple
-from bs4 import BeautifulSoup
-from flask import Flask, render_template
+from flask import Flask
 from threading import Thread
+import re
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Flask app to keep the bot running
+# Flask app to keep the bot running on Render
 app = Flask('')
 
 @app.route('/')
 def home():
-    """Display the home page"""
     return "SnipeBot is running!"
 
 def run_flask():
@@ -60,19 +48,19 @@ def normalize_text(text: str) -> str:
 # Step 2: Offensive word filters (regex-based)
 FILTER_PATTERNS = [
     r"n[i1l][g69q][g69a@4][a@4]?",     # n-word
-    r"f[uÃ¼v][c(kq)][k]?",              # f-word
+    r"f[uüv][c(kq)][k]?",              # f-word
     r"r[e3][t+][a@4][r]{1,2}[d]*",     # r-word
     r"b[i1!|][t+][c(kq)][h]+",         # b-word
     r"s[h][i1!|][t+]",                 # shit
     r"r[a@4][p][e3]",                  # rape
     r"a[s$]{2,}[h]*[o0]*[l1!|]*[e]*",  # a-hole
     r"d[i1!|][c(kq)][k]+",             # dick
-    r"c[uÃ¼v][n][t]+",                  # c-word
+    r"c[uüv][n][t]+",                  # c-word
     r"p[o0][r]+[n]+",                  # porn
     r"w[h][o0][r]+[e3]+",              # whore
-    r"s[l1][uÃ¼v][t]+",                 # slut
+    r"s[l1][uüv][t]+",                 # slut
     r"f[a@4][gq69]+",                  # fag
-    r"k[i1l|!][l1][l1]y[o0][uÃ¼v][r]+[s$][e3][l1]+[f]+", # kill yourself
+    r"k[i1l|!][l1][l1]y[o0][uüv][r]+[s$][e3][l1]+[f]+", # kill yourself
     r"ky[s$]+"                         # kys
 ]
 
@@ -105,134 +93,17 @@ def filter_content(content):
     
     return ' '.join(words)
 
-# Tenor Handler class
-class TenorHandler:
-    def __init__(self):
-        """Initialize the TenorHandler."""
-        # Regular expression patterns
-        self.tenor_pattern = re.compile(r'https?://tenor\.com/view/[\w-]+-\d+')
-        self.gif_id_pattern = re.compile(r'https?://tenor\.com/view/[\w-]+-(\d+)')
-    
-    async def extract_gif_url(self, tenor_url: str) -> Optional[str]:
-        """
-        Extract the actual GIF URL from a Tenor link.
-        
-        Args:
-            tenor_url: The Tenor URL to extract the GIF from
-            
-        Returns:
-            The actual GIF URL, or None if extraction failed
-        """
-        # First, try the API method
-        try:
-            gif_url = await self._extract_via_api(tenor_url)
-            if gif_url:
-                return gif_url
-        except Exception as e:
-            logger.warning(f"API extraction failed: {e}, trying fallback method")
-        
-        # If API method fails, try the fallback (scraping)
-        try:
-            return await self._extract_via_scraping(tenor_url)
-        except Exception as e:
-            logger.error(f"Error extracting GIF URL via scraping: {e}")
-            return None
-    
-    async def _extract_via_api(self, tenor_url: str) -> Optional[str]:
-        """
-        Extract the GIF URL using Tenor's API.
-        
-        Args:
-            tenor_url: The Tenor URL to extract the GIF from
-            
-        Returns:
-            The GIF URL, or None if extraction failed
-        """
-        # Extract the GIF ID from the URL
-        match = self.gif_id_pattern.match(tenor_url)
-        if not match:
-            return None
-        
-        gif_id = match.group(1)
-        
-        # Construct the API URL
-        api_url = f"https://tenor.googleapis.com/v2/posts?ids={gif_id}&key=AIzaSyDbC3ahfcjkHZVFX2Jd75L1UUXVvYUrSQ0&client_key=tenor_web"
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(api_url) as response:
-                if response.status != 200:
-                    logger.warning(f"API request failed with status {response.status}")
-                    return None
-                
-                data = await response.json()
-                
-                # Extract the GIF URL from the response
-                try:
-                    results = data.get('results', [])
-                    if not results:
-                        return None
-                    
-                    media_formats = results[0].get('media_formats', {})
-                    # Try to get different formats in order of preference
-                    for format_type in ['gif', 'mediumgif', 'tinygif', 'mp4', 'webm']:
-                        if format_type in media_formats:
-                            return media_formats[format_type]['url']
-                    
-                    return None
-                except (KeyError, IndexError) as e:
-                    logger.warning(f"Failed to extract GIF URL from API response: {e}")
-                    return None
-    
-    async def _extract_via_scraping(self, tenor_url: str) -> Optional[str]:
-        """
-        Extract the GIF URL by scraping the Tenor page.
-        
-        Args:
-            tenor_url: The Tenor URL to extract the GIF from
-            
-        Returns:
-            The GIF URL, or None if extraction failed
-        """
-        async with aiohttp.ClientSession() as session:
-            async with session.get(tenor_url) as response:
-                if response.status != 200:
-                    logger.warning(f"Scraping request failed with status {response.status}")
-                    return None
-                
-                html = await response.text()
-                soup = BeautifulSoup(html, 'html.parser')
-                
-                # Look for the GIF URL in various places
-                # 1. Try to find it in meta tags
-                og_image = soup.find('meta', property='og:image')
-                if og_image and og_image.get('content'):
-                    return og_image['content']
-                
-                # 2. Try to find it in <img> tags
-                gif_imgs = soup.find_all('img', class_='Gif-image')
-                if gif_imgs:
-                    for img in gif_imgs:
-                        if 'src' in img.attrs:
-                            return img['src']
-                
-                # 3. Try to find it in <source> tags
-                sources = soup.find_all('source')
-                for source in sources:
-                    if 'src' in source.attrs and source['src'].endswith(('.gif', '.mp4', '.webm')):
-                        return source['src']
-                
-                # 4. Look for any script tags with JSON data
-                for script in soup.find_all('script', type='application/json'):
-                    try:
-                        import json
-                        data = json.loads(script.string)
-                        if 'src' in data and data['src'].endswith(('.gif', '.mp4', '.webm')):
-                            return data['src']
-                    except:
-                        pass
-                
-                logger.warning("Could not extract GIF URL from Tenor page")
-                return None
+# Enable intents
+intents = discord.Intents.default()
+intents.messages = True
+intents.message_content = True
+intents.members = True
+
+# Initialize bot
+bot = commands.Bot(command_prefix=",", intents=intents)
+bot.remove_command('help')
+sniped_messages = {}
+edited_messages = {}
 
 # Helper function to handle media URLs
 def get_media_url(content, attachments):
@@ -258,25 +129,9 @@ def get_media_url(content, attachments):
     
     # If there are attachments, return the URL of the first one
     if attachments:
-        try:
-            return attachments[0].url
-        except (AttributeError, IndexError):
-            if isinstance(attachments, list) and len(attachments) > 0:
-                return attachments[0]
+        return attachments[0].url
     
     return None
-
-# Enable intents
-intents = discord.Intents.default()
-intents.messages = True
-intents.message_content = True
-intents.members = True
-
-# Initialize bot
-bot = commands.Bot(command_prefix=",", intents=intents)
-bot.remove_command('help')
-sniped_messages = {}
-edited_messages = {}
 
 # Custom check that allows administrators and owners to bypass permission requirements
 def has_permission_or_is_admin():
@@ -337,9 +192,6 @@ def check_moderator():
                 interaction.user.guild_permissions.ban_members)
     return app_commands.check(predicate)
 
-# Create tenor handler instance
-tenor_handler = TenorHandler()
-
 @bot.event
 async def on_ready():
     try:
@@ -358,27 +210,13 @@ async def on_message_delete(message):
     if message.channel.id not in sniped_messages:
         sniped_messages[message.channel.id] = []
     
-    # Check if there's a Tenor link in the message
-    tenor_gif_url = None
-    
-    if message.content:
-        tenor_match = re.search(r'https?://(?:www\.)?tenor\.com/view/[^\s]+', message.content)
-        if tenor_match:
-            tenor_url = tenor_match.group(0)
-            try:
-                # Extract the actual GIF URL using the handler
-                tenor_gif_url = await tenor_handler.extract_gif_url(tenor_url)
-            except Exception as e:
-                print(f"Error extracting Tenor GIF URL: {e}")
-    
     # Add offensive content flag to saved messages
     sniped_messages[message.channel.id].append({
         "content": message.content,
         "author": message.author,
         "attachments": message.attachments,
         "time": message.created_at,
-        "has_offensive_content": is_offensive_content(message.content),
-        "tenor_gif_url": tenor_gif_url  # Store the actual GIF URL
+        "has_offensive_content": is_offensive_content(message.content)
     })
 
     if len(sniped_messages[message.channel.id]) > 10:
@@ -395,19 +233,6 @@ async def on_message_edit(before, after):
     if before.channel.id not in edited_messages:
         edited_messages[before.channel.id] = []
     
-    # Check if there's a Tenor link in the message
-    tenor_gif_url = None
-    
-    if after.content:
-        tenor_match = re.search(r'https?://(?:www\.)?tenor\.com/view/[^\s]+', after.content)
-        if tenor_match:
-            tenor_url = tenor_match.group(0)
-            try:
-                # Extract the actual GIF URL using the handler
-                tenor_gif_url = await tenor_handler.extract_gif_url(tenor_url)
-            except Exception as e:
-                print(f"Error extracting Tenor GIF URL: {e}")
-    
     # Add offensive content flags to saved messages
     edited_messages[before.channel.id].append({
         "before_content": before.content,
@@ -416,8 +241,7 @@ async def on_message_edit(before, after):
         "attachments": before.attachments,
         "time": after.edited_at or discord.utils.utcnow(),
         "before_has_offensive_content": is_offensive_content(before.content),
-        "after_has_offensive_content": is_offensive_content(after.content),
-        "tenor_gif_url": tenor_gif_url  # Store the actual GIF URL
+        "after_has_offensive_content": is_offensive_content(after.content)
     })
     
     if len(edited_messages[before.channel.id]) > 10:
@@ -440,7 +264,7 @@ async def snipe_slash(interaction: discord.Interaction, page: int = 1):
         return
 
     snipe = sniped_messages[channel.id][-page]
-    embed = discord.Embed(title="ðŸ“œ Sniped Message", color=discord.Color.gold())
+    embed = discord.Embed(title="📜 Sniped Message", color=discord.Color.gold())
     
     # Filter content if it contains offensive words
     content = snipe['content'] or "*No text content*"
@@ -452,33 +276,19 @@ async def snipe_slash(interaction: discord.Interaction, page: int = 1):
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel.id])}")
 
-    # Handle Tenor GIF URLs directly
-    if snipe.get('tenor_gif_url'):
-        embed.set_image(url=snipe['tenor_gif_url'])
-    else:
-        # Fall back to other media handling methods
-        media_url = get_media_url(snipe['content'], snipe['attachments'])
-        
-        if media_url:
-            if 'tenor.com/view/' in media_url:
-                # For Tenor links not processed earlier, try to extract GIF now
-                try:
-                    gif_url = await tenor_handler.extract_gif_url(media_url)
-                    if gif_url:
-                        embed.set_image(url=gif_url)
-                except Exception as e:
-                    print(f"Error extracting Tenor GIF URL on display: {e}")
-            else:
-                # For non-Tenor media
-                embed.set_image(url=media_url)
-        elif snipe["attachments"]:
-            for attachment in snipe["attachments"]:
-                if hasattr(attachment, 'content_type') and attachment.content_type and attachment.content_type.startswith("image"):
-                    embed.set_image(url=attachment.url)
-                    break
-                if hasattr(attachment, 'url') and attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                    embed.set_image(url=attachment.url)
-                    break
+    # Handle attachments and media links
+    media_url = get_media_url(snipe['content'], snipe['attachments'])
+    
+    if media_url:
+        embed.set_image(url=media_url)
+    elif snipe["attachments"]:
+        for attachment in snipe["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
 
     await interaction.response.send_message(embed=embed)
 
@@ -496,45 +306,31 @@ async def snipeforce_slash(interaction: discord.Interaction, page: int = 1):
         return
 
     snipe = sniped_messages[channel.id][-page]
-    embed = discord.Embed(title="ðŸ”’ Moderator Snipe (Unfiltered)", color=discord.Color.dark_red())
+    embed = discord.Embed(title="🔒 Moderator Snipe (Unfiltered)", color=discord.Color.dark_red())
     
     # Show unfiltered content
     content = snipe['content'] or "*No text content*"
     if snipe.get('has_offensive_content', False):
-        embed.description = "âš ï¸ **Warning:** This message contains offensive content."
+        embed.description = "⚠️ **Warning:** This message contains offensive content."
     
     embed.add_field(name="**Content:**", value=content, inline=False)
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(sniped_messages[channel.id])}")
 
-    # Handle Tenor GIF URLs directly
-    if snipe.get('tenor_gif_url'):
-        embed.set_image(url=snipe['tenor_gif_url'])
-    else:
-        # Fall back to other media handling methods
-        media_url = get_media_url(snipe['content'], snipe['attachments'])
-        
-        if media_url:
-            if 'tenor.com/view/' in media_url:
-                # For Tenor links not processed earlier, try to extract GIF now
-                try:
-                    gif_url = await tenor_handler.extract_gif_url(media_url)
-                    if gif_url:
-                        embed.set_image(url=gif_url)
-                except Exception as e:
-                    print(f"Error extracting Tenor GIF URL on display: {e}")
-            else:
-                # For non-Tenor media
-                embed.set_image(url=media_url)
-        elif snipe["attachments"]:
-            for attachment in snipe["attachments"]:
-                if hasattr(attachment, 'content_type') and attachment.content_type and attachment.content_type.startswith("image"):
-                    embed.set_image(url=attachment.url)
-                    break
-                if hasattr(attachment, 'url') and attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                    embed.set_image(url=attachment.url)
-                    break
+    # Handle attachments and media links
+    media_url = get_media_url(snipe['content'], snipe['attachments'])
+    
+    if media_url:
+        embed.set_image(url=media_url)
+    elif snipe["attachments"]:
+        for attachment in snipe["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -551,7 +347,7 @@ async def snipeedit_slash(interaction: discord.Interaction, page: int = 1):
         return
     
     edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="âœï¸ Edited Message", color=discord.Color.blue())
+    embed = discord.Embed(title="✏️ Edited Message", color=discord.Color.blue())
     
     # Filter content if it contains offensive words
     before_content = edit['before_content'] or "*No text content*"
@@ -569,33 +365,19 @@ async def snipeedit_slash(interaction: discord.Interaction, page: int = 1):
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot | Page {page} of {len(edited_messages[channel.id])}")
     
-    # Handle Tenor GIF URLs directly
-    if edit.get('tenor_gif_url'):
-        embed.set_image(url=edit['tenor_gif_url'])
-    else:
-        # Fall back to other media handling methods
-        media_url = get_media_url(edit['after_content'], edit['attachments'])
-        
-        if media_url:
-            if 'tenor.com/view/' in media_url:
-                # For Tenor links not processed earlier, try to extract GIF now
-                try:
-                    gif_url = await tenor_handler.extract_gif_url(media_url)
-                    if gif_url:
-                        embed.set_image(url=gif_url)
-                except Exception as e:
-                    print(f"Error extracting Tenor GIF URL on display: {e}")
-            else:
-                # For non-Tenor media
-                embed.set_image(url=media_url)
-        elif edit["attachments"]:
-            for attachment in edit["attachments"]:
-                if hasattr(attachment, 'content_type') and attachment.content_type and attachment.content_type.startswith("image"):
-                    embed.set_image(url=attachment.url)
-                    break
-                if hasattr(attachment, 'url') and attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                    embed.set_image(url=attachment.url)
-                    break
+    # Handle attachments and media links
+    media_url = get_media_url(edit['after_content'], edit['attachments'])
+    
+    if media_url:
+        embed.set_image(url=media_url)
+    elif edit["attachments"]:
+        for attachment in edit["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
     
     await interaction.response.send_message(embed=embed)
 
@@ -613,7 +395,7 @@ async def snipeeditforce_slash(interaction: discord.Interaction, page: int = 1):
         return
     
     edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="ðŸ”’ Moderator Edit Snipe (Unfiltered)", color=discord.Color.dark_red())
+    embed = discord.Embed(title="🔒 Moderator Edit Snipe (Unfiltered)", color=discord.Color.dark_red())
     
     # Show unfiltered content
     before_content = edit['before_content'] or "*No text content*"
@@ -621,7 +403,7 @@ async def snipeeditforce_slash(interaction: discord.Interaction, page: int = 1):
     
     has_offensive = edit.get('before_has_offensive_content', False) or edit.get('after_has_offensive_content', False)
     if has_offensive:
-        embed.description = "âš ï¸ **Warning:** This message contains offensive content."
+        embed.description = "⚠️ **Warning:** This message contains offensive content."
     
     embed.add_field(name="**Before:**", value=before_content, inline=False)
     embed.add_field(name="**After:**", value=after_content, inline=False)
@@ -629,33 +411,19 @@ async def snipeeditforce_slash(interaction: discord.Interaction, page: int = 1):
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(edited_messages[channel.id])}")
     
-    # Handle Tenor GIF URLs directly
-    if edit.get('tenor_gif_url'):
-        embed.set_image(url=edit['tenor_gif_url'])
-    else:
-        # Fall back to other media handling methods
-        media_url = get_media_url(edit['after_content'], edit['attachments'])
-        
-        if media_url:
-            if 'tenor.com/view/' in media_url:
-                # For Tenor links not processed earlier, try to extract GIF now
-                try:
-                    gif_url = await tenor_handler.extract_gif_url(media_url)
-                    if gif_url:
-                        embed.set_image(url=gif_url)
-                except Exception as e:
-                    print(f"Error extracting Tenor GIF URL on display: {e}")
-            else:
-                # For non-Tenor media
-                embed.set_image(url=media_url)
-        elif edit["attachments"]:
-            for attachment in edit["attachments"]:
-                if hasattr(attachment, 'content_type') and attachment.content_type and attachment.content_type.startswith("image"):
-                    embed.set_image(url=attachment.url)
-                    break
-                if hasattr(attachment, 'url') and attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                    embed.set_image(url=attachment.url)
-                    break
+    # Handle attachments and media links
+    media_url = get_media_url(edit['after_content'], edit['attachments'])
+    
+    if media_url:
+        embed.set_image(url=media_url)
+    elif edit["attachments"]:
+        for attachment in edit["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -666,14 +434,14 @@ async def mess(interaction: discord.Interaction, member: discord.Member, message
     try:
         await member.send(message)
         embed = discord.Embed(
-            title="âœ… Message Sent",
+            title="✅ Message Sent",
             description=f"Message sent to {member.mention}.",
             color=discord.Color.green()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
     except discord.Forbidden:
         embed = discord.Embed(
-            title="âŒ Failed to Send",
+            title="❌ Failed to Send",
             description="Could not send DM. User may have DMs disabled.",
             color=discord.Color.red()
         )
@@ -696,14 +464,14 @@ async def reset_slash(interaction: discord.Interaction):
         
     if sniped_reset or edited_reset:
         embed = discord.Embed(
-            title="ðŸ—‘ï¸ Reset Complete",
+            title="🗑️ Reset Complete",
             description="Cleared sniped and edited messages in this channel.",
             color=discord.Color.green()
         )
         await interaction.response.send_message(embed=embed)
     else:
         embed = discord.Embed(
-            title="â„¹ï¸ Nothing to Reset",
+            title="ℹ️ Nothing to Reset",
             description="There were no sniped or edited messages to clear.",
             color=discord.Color.blue()
         )
@@ -717,21 +485,21 @@ async def rename_slash(interaction: discord.Interaction, member: discord.Member,
         old_nick = member.display_name
         await member.edit(nick=nickname)
         embed = discord.Embed(
-            title="âœ… Nickname Changed",
+            title="✅ Nickname Changed",
             description=f"Changed {member.mention}'s nickname from '{old_nick}' to '{nickname}'.",
             color=discord.Color.green()
         )
         await interaction.response.send_message(embed=embed)
     except discord.Forbidden:
         embed = discord.Embed(
-            title="âŒ Failed",
+            title="❌ Failed",
             description="I don't have permission to change that user's nickname.",
             color=discord.Color.red()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
     except discord.HTTPException as e:
         embed = discord.Embed(
-            title="âŒ Error",
+            title="❌ Error",
             description=f"Failed to change nickname: {str(e)}",
             color=discord.Color.red()
         )
@@ -740,7 +508,7 @@ async def rename_slash(interaction: discord.Interaction, member: discord.Member,
 @bot.tree.command(name="filter", description="Check if the content filter is enabled")
 async def filter_slash(interaction: discord.Interaction):
     embed = discord.Embed(
-        title="ðŸ›¡ï¸ Content Filter Status",
+        title="🛡️ Content Filter Status",
         description="The content filter is active. Offensive words in sniped messages will be hidden with asterisks.",
         color=discord.Color.blue()
     )
@@ -754,7 +522,7 @@ async def filter_slash(interaction: discord.Interaction):
 @bot.tree.command(name="maintainer", description="Shows who maintains the bot")
 async def maintainer(interaction: discord.Interaction):
     embed = discord.Embed(
-        title="ðŸ‘¤ Bot Maintainer",
+        title="👤 Bot Maintainer",
         description="This bot is maintained and developed by Werzzzy.",
         color=discord.Color.blue()
     )
@@ -764,7 +532,7 @@ async def maintainer(interaction: discord.Interaction):
 @bot.tree.command(name="help", description="Show bot commands")
 async def help_slash(interaction: discord.Interaction):
     embed = discord.Embed(
-        title="â“ SnipeBot Help",
+        title="❓ SnipeBot Help",
         description="Available commands:",
         color=discord.Color.blurple()
     )
@@ -785,7 +553,7 @@ async def snipe(ctx, page: int = 1):
     channel_id = ctx.channel.id
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
         embed = discord.Embed(
-            title="âŒ No Deleted Messages",
+            title="❌ No Deleted Messages",
             description="There are no recently deleted messages in this channel.",
             color=discord.Color.red()
         )
@@ -794,7 +562,7 @@ async def snipe(ctx, page: int = 1):
 
     if page < 1 or page > len(sniped_messages[channel_id]):
         embed = discord.Embed(
-            title="âš ï¸ Invalid Page Number",
+            title="⚠️ Invalid Page Number",
             description=f"Page must be between 1 and {len(sniped_messages[channel_id])}.",
             color=discord.Color.orange()
         )
@@ -802,7 +570,7 @@ async def snipe(ctx, page: int = 1):
         return
 
     snipe = sniped_messages[channel_id][-page]
-    embed = discord.Embed(title="ðŸ“œ Sniped Message", color=discord.Color.gold())
+    embed = discord.Embed(title="📜 Sniped Message", color=discord.Color.gold())
     
     # Filter content if it contains offensive words
     content = snipe['content'] or "*No text content*"
@@ -814,33 +582,19 @@ async def snipe(ctx, page: int = 1):
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel_id])}")
 
-    # Handle Tenor GIF URLs directly
-    if snipe.get('tenor_gif_url'):
-        embed.set_image(url=snipe['tenor_gif_url'])
-    else:
-        # Fall back to other media handling methods
-        media_url = get_media_url(snipe['content'], snipe['attachments'])
-        
-        if media_url:
-            if 'tenor.com/view/' in media_url:
-                # For Tenor links not processed earlier, try to extract GIF now
-                try:
-                    gif_url = await tenor_handler.extract_gif_url(media_url)
-                    if gif_url:
-                        embed.set_image(url=gif_url)
-                except Exception as e:
-                    print(f"Error extracting Tenor GIF URL on display: {e}")
-            else:
-                # For non-Tenor media
-                embed.set_image(url=media_url)
-        elif snipe["attachments"]:
-            for attachment in snipe["attachments"]:
-                if hasattr(attachment, 'content_type') and attachment.content_type and attachment.content_type.startswith("image"):
-                    embed.set_image(url=attachment.url)
-                    break
-                if hasattr(attachment, 'url') and attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                    embed.set_image(url=attachment.url)
-                    break
+    # Handle attachments and media links
+    media_url = get_media_url(snipe['content'], snipe['attachments'])
+    
+    if media_url:
+        embed.set_image(url=media_url)
+    elif snipe["attachments"]:
+        for attachment in snipe["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
 
     await ctx.send(embed=embed)
 
@@ -850,7 +604,7 @@ async def snipeforce(ctx, page: int = 1):
     channel_id = ctx.channel.id
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
         embed = discord.Embed(
-            title="âŒ No Deleted Messages",
+            title="❌ No Deleted Messages",
             description="There are no recently deleted messages in this channel.",
             color=discord.Color.red()
         )
@@ -859,7 +613,7 @@ async def snipeforce(ctx, page: int = 1):
 
     if page < 1 or page > len(sniped_messages[channel_id]):
         embed = discord.Embed(
-            title="âš ï¸ Invalid Page Number",
+            title="⚠️ Invalid Page Number",
             description=f"Page must be between 1 and {len(sniped_messages[channel_id])}.",
             color=discord.Color.orange()
         )
@@ -867,45 +621,31 @@ async def snipeforce(ctx, page: int = 1):
         return
 
     snipe = sniped_messages[channel_id][-page]
-    embed = discord.Embed(title="ðŸ”’ Moderator Snipe (Unfiltered)", color=discord.Color.dark_red())
+    embed = discord.Embed(title="🔒 Moderator Snipe (Unfiltered)", color=discord.Color.dark_red())
     
     # Show unfiltered content
     content = snipe['content'] or "*No text content*"
     if snipe.get('has_offensive_content', False):
-        embed.description = "âš ï¸ **Warning:** This message contains offensive content."
+        embed.description = "⚠️ **Warning:** This message contains offensive content."
     
     embed.add_field(name="**Content:**", value=content, inline=False)
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(sniped_messages[channel_id])}")
 
-    # Handle Tenor GIF URLs directly
-    if snipe.get('tenor_gif_url'):
-        embed.set_image(url=snipe['tenor_gif_url'])
-    else:
-        # Fall back to other media handling methods
-        media_url = get_media_url(snipe['content'], snipe['attachments'])
-        
-        if media_url:
-            if 'tenor.com/view/' in media_url:
-                # For Tenor links not processed earlier, try to extract GIF now
-                try:
-                    gif_url = await tenor_handler.extract_gif_url(media_url)
-                    if gif_url:
-                        embed.set_image(url=gif_url)
-                except Exception as e:
-                    print(f"Error extracting Tenor GIF URL on display: {e}")
-            else:
-                # For non-Tenor media
-                embed.set_image(url=media_url)
-        elif snipe["attachments"]:
-            for attachment in snipe["attachments"]:
-                if hasattr(attachment, 'content_type') and attachment.content_type and attachment.content_type.startswith("image"):
-                    embed.set_image(url=attachment.url)
-                    break
-                if hasattr(attachment, 'url') and attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                    embed.set_image(url=attachment.url)
-                    break
+    # Handle attachments and media links
+    media_url = get_media_url(snipe['content'], snipe['attachments'])
+    
+    if media_url:
+        embed.set_image(url=media_url)
+    elif snipe["attachments"]:
+        for attachment in snipe["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
 
     await ctx.send(embed=embed)
 
@@ -914,7 +654,7 @@ async def snipeedit(ctx, page: int = 1):
     channel_id = ctx.channel.id
     if channel_id not in edited_messages or not edited_messages[channel_id]:
         embed = discord.Embed(
-            title="âŒ No Edited Messages",
+            title="❌ No Edited Messages",
             description="There are no recently edited messages in this channel.",
             color=discord.Color.red()
         )
@@ -923,7 +663,7 @@ async def snipeedit(ctx, page: int = 1):
 
     if page < 1 or page > len(edited_messages[channel_id]):
         embed = discord.Embed(
-            title="âš ï¸ Invalid Page Number",
+            title="⚠️ Invalid Page Number",
             description=f"Page must be between 1 and {len(edited_messages[channel_id])}.",
             color=discord.Color.orange()
         )
@@ -931,7 +671,7 @@ async def snipeedit(ctx, page: int = 1):
         return
 
     edit = edited_messages[channel_id][-page]
-    embed = discord.Embed(title="âœï¸ Edited Message", color=discord.Color.blue())
+    embed = discord.Embed(title="✏️ Edited Message", color=discord.Color.blue())
     
     # Filter content if it contains offensive words
     before_content = edit['before_content'] or "*No text content*"
@@ -949,43 +689,29 @@ async def snipeedit(ctx, page: int = 1):
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot | Page {page} of {len(edited_messages[channel_id])}")
     
-    # Handle Tenor GIF URLs directly
-    if edit.get('tenor_gif_url'):
-        embed.set_image(url=edit['tenor_gif_url'])
-    else:
-        # Fall back to other media handling methods
-        media_url = get_media_url(edit['after_content'], edit['attachments'])
-        
-        if media_url:
-            if 'tenor.com/view/' in media_url:
-                # For Tenor links not processed earlier, try to extract GIF now
-                try:
-                    gif_url = await tenor_handler.extract_gif_url(media_url)
-                    if gif_url:
-                        embed.set_image(url=gif_url)
-                except Exception as e:
-                    print(f"Error extracting Tenor GIF URL on display: {e}")
-            else:
-                # For non-Tenor media
-                embed.set_image(url=media_url)
-        elif edit["attachments"]:
-            for attachment in edit["attachments"]:
-                if hasattr(attachment, 'content_type') and attachment.content_type and attachment.content_type.startswith("image"):
-                    embed.set_image(url=attachment.url)
-                    break
-                if hasattr(attachment, 'url') and attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                    embed.set_image(url=attachment.url)
-                    break
+    # Handle attachments and media links
+    media_url = get_media_url(edit['after_content'], edit['attachments'])
+    
+    if media_url:
+        embed.set_image(url=media_url)
+    elif edit["attachments"]:
+        for attachment in edit["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
     
     await ctx.send(embed=embed)
 
-@bot.command()
+@bot.command(aliases=["sef"])
 @is_moderator()
 async def snipeeditforce(ctx, page: int = 1):
     channel_id = ctx.channel.id
     if channel_id not in edited_messages or not edited_messages[channel_id]:
         embed = discord.Embed(
-            title="âŒ No Edited Messages",
+            title="❌ No Edited Messages",
             description="There are no recently edited messages in this channel.",
             color=discord.Color.red()
         )
@@ -994,7 +720,7 @@ async def snipeeditforce(ctx, page: int = 1):
 
     if page < 1 or page > len(edited_messages[channel_id]):
         embed = discord.Embed(
-            title="âš ï¸ Invalid Page Number",
+            title="⚠️ Invalid Page Number",
             description=f"Page must be between 1 and {len(edited_messages[channel_id])}.",
             color=discord.Color.orange()
         )
@@ -1002,7 +728,7 @@ async def snipeeditforce(ctx, page: int = 1):
         return
 
     edit = edited_messages[channel_id][-page]
-    embed = discord.Embed(title="ðŸ”’ Moderator Edit Snipe (Unfiltered)", color=discord.Color.dark_red())
+    embed = discord.Embed(title="🔒 Moderator Edit Snipe (Unfiltered)", color=discord.Color.dark_red())
     
     # Show unfiltered content
     before_content = edit['before_content'] or "*No text content*"
@@ -1010,7 +736,7 @@ async def snipeeditforce(ctx, page: int = 1):
     
     has_offensive = edit.get('before_has_offensive_content', False) or edit.get('after_has_offensive_content', False)
     if has_offensive:
-        embed.description = "âš ï¸ **Warning:** This message contains offensive content."
+        embed.description = "⚠️ **Warning:** This message contains offensive content."
     
     embed.add_field(name="**Before:**", value=before_content, inline=False)
     embed.add_field(name="**After:**", value=after_content, inline=False)
@@ -1018,58 +744,42 @@ async def snipeeditforce(ctx, page: int = 1):
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(edited_messages[channel_id])}")
     
-    # Handle Tenor GIF URLs directly
-    if edit.get('tenor_gif_url'):
-        embed.set_image(url=edit['tenor_gif_url'])
-    else:
-        # Fall back to other media handling methods
-        media_url = get_media_url(edit['after_content'], edit['attachments'])
-        
-        if media_url:
-            if 'tenor.com/view/' in media_url:
-                # For Tenor links not processed earlier, try to extract GIF now
-                try:
-                    gif_url = await tenor_handler.extract_gif_url(media_url)
-                    if gif_url:
-                        embed.set_image(url=gif_url)
-                except Exception as e:
-                    print(f"Error extracting Tenor GIF URL on display: {e}")
-            else:
-                # For non-Tenor media
-                embed.set_image(url=media_url)
-        elif edit["attachments"]:
-            for attachment in edit["attachments"]:
-                if hasattr(attachment, 'content_type') and attachment.content_type and attachment.content_type.startswith("image"):
-                    embed.set_image(url=attachment.url)
-                    break
-                if hasattr(attachment, 'url') and attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                    embed.set_image(url=attachment.url)
-                    break
+    # Handle attachments and media links
+    media_url = get_media_url(edit['after_content'], edit['attachments'])
+    
+    if media_url:
+        embed.set_image(url=media_url)
+    elif edit["attachments"]:
+        for attachment in edit["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
     
     await ctx.send(embed=embed)
 
 @bot.command()
-@has_permission_or_is_admin()
 @commands.has_permissions(moderate_members=True)
-async def mess(ctx, member: discord.Member, *, message: str):
+async def mess(ctx, member: discord.Member, *, message):
     try:
         await member.send(message)
         embed = discord.Embed(
-            title="âœ… Message Sent",
+            title="✅ Message Sent",
             description=f"Message sent to {member.mention}.",
             color=discord.Color.green()
         )
         await ctx.send(embed=embed)
     except discord.Forbidden:
         embed = discord.Embed(
-            title="âŒ Failed to Send",
+            title="❌ Failed to Send",
             description="Could not send DM. User may have DMs disabled.",
             color=discord.Color.red()
         )
         await ctx.send(embed=embed)
 
 @bot.command()
-@has_permission_or_is_admin()
 @commands.has_permissions(administrator=True)
 async def reset(ctx):
     channel_id = ctx.channel.id
@@ -1086,42 +796,41 @@ async def reset(ctx):
         
     if sniped_reset or edited_reset:
         embed = discord.Embed(
-            title="ðŸ—‘ï¸ Reset Complete",
+            title="🗑️ Reset Complete",
             description="Cleared sniped and edited messages in this channel.",
             color=discord.Color.green()
         )
         await ctx.send(embed=embed)
     else:
         embed = discord.Embed(
-            title="â„¹ï¸ Nothing to Reset",
+            title="ℹ️ Nothing to Reset",
             description="There were no sniped or edited messages to clear.",
             color=discord.Color.blue()
         )
         await ctx.send(embed=embed)
 
-@bot.command()
-@has_permission_or_is_admin()
+@bot.command(aliases=["re"])
 @commands.has_permissions(manage_nicknames=True)
-async def rename(ctx, member: discord.Member, *, nickname: str):
+async def rename(ctx, member: discord.Member, *, nickname):
     try:
         old_nick = member.display_name
         await member.edit(nick=nickname)
         embed = discord.Embed(
-            title="âœ… Nickname Changed",
+            title="✅ Nickname Changed",
             description=f"Changed {member.mention}'s nickname from '{old_nick}' to '{nickname}'.",
             color=discord.Color.green()
         )
         await ctx.send(embed=embed)
     except discord.Forbidden:
         embed = discord.Embed(
-            title="âŒ Failed",
+            title="❌ Failed",
             description="I don't have permission to change that user's nickname.",
             color=discord.Color.red()
         )
         await ctx.send(embed=embed)
     except discord.HTTPException as e:
         embed = discord.Embed(
-            title="âŒ Error",
+            title="❌ Error",
             description=f"Failed to change nickname: {str(e)}",
             color=discord.Color.red()
         )
@@ -1130,13 +839,13 @@ async def rename(ctx, member: discord.Member, *, nickname: str):
 @bot.command()
 async def filter(ctx):
     embed = discord.Embed(
-        title="ðŸ›¡ï¸ Content Filter Status",
+        title="🛡️ Content Filter Status",
         description="The content filter is active. Offensive words in sniped messages will be hidden with asterisks.",
         color=discord.Color.blue()
     )
     embed.add_field(
         name="Moderator Commands",
-        value="Moderators can use `snipeforce` and `snipeeditforce` to view unfiltered content.",
+        value="Moderators can use `/snipeforce` and `/snipeeditforce` to view unfiltered content.",
         inline=False
     )
     await ctx.send(embed=embed)
@@ -1144,7 +853,7 @@ async def filter(ctx):
 @bot.command(aliases=["h"])
 async def help(ctx):
     embed = discord.Embed(
-        title="â“ SnipeBot Help",
+        title="❓ SnipeBot Help",
         description="Available commands:",
         color=discord.Color.blurple()
     )
@@ -1160,25 +869,34 @@ async def help(ctx):
     embed.set_footer(text="SnipeBot by Werzzzy | Server owner and administrators bypass all permission requirements")
     await ctx.send(embed=embed)
 
-# For error handling
-@bot.event
-async def on_command_error(ctx, error):
+@mess.error
+@reset.error
+@rename.error
+async def moderator_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send("You don't have the required permissions to use this command.")
-    elif isinstance(error, commands.CommandNotFound):
-        # Ignore command not found errors
-        pass
-    else:
-        # Log the error
-        logger.error(f"Command error: {error}")
+        embed = discord.Embed(
+            title="❌ Permission Denied",
+            description="You don't have the required permissions to use this command.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
 
-# Run the Flask server
-run_flask()
+@snipeforce.error
+@snipeeditforce.error
+async def permission_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        embed = discord.Embed(
+            title="❌ Permission Denied",
+            description="Only moderators and administrators can use this command.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
 
-# Run the bot (replace TOKEN with your actual Discord token)
+# Start the flask server and bot
 if __name__ == "__main__":
-    token = os.getenv("DISCORD_TOKEN")
+    run_flask()
+    token = os.environ.get("DISCORD_TOKEN")
     if not token:
-        print("Error: No Discord token found in environment variables. Please set the DISCORD_TOKEN.")
+        print("Error: No Discord token found. Please set the DISCORD_TOKEN environment variable.")
     else:
         bot.run(token)
