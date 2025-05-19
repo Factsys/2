@@ -1,4 +1,5 @@
 discord.py
-Flask
 aiohttp
-
+beautifulsoup4
+flask
+gunicorn
