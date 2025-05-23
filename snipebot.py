@@ -105,6 +105,9 @@ bot.remove_command('help')
 sniped_messages = {}
 edited_messages = {}
 
+# ENHANCED: Increased storage capacity to support 100 pages
+MAX_MESSAGES = 100  # Increased from 10 to 100
+
 # Helper function to handle media URLs
 def get_media_url(content, attachments):
     # Check for tenor links
@@ -219,7 +222,8 @@ async def on_message_delete(message):
         "has_offensive_content": is_offensive_content(message.content)
     })
 
-    if len(sniped_messages[message.channel.id]) > 10:
+    # ENHANCED: Increased limit to 100 messages
+    if len(sniped_messages[message.channel.id]) > MAX_MESSAGES:
         sniped_messages[message.channel.id].pop(0)
 
 @bot.event
@@ -244,7 +248,8 @@ async def on_message_edit(before, after):
         "after_has_offensive_content": is_offensive_content(after.content)
     })
     
-    if len(edited_messages[before.channel.id]) > 10:
+    # ENHANCED: Increased limit to 100 messages
+    if len(edited_messages[before.channel.id]) > MAX_MESSAGES:
         edited_messages[before.channel.id].pop(0)
 
 @bot.tree.command(name="ping", description="Check the bot's latency")
@@ -252,7 +257,7 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"Pong! Latency: {round(bot.latency * 1000)}ms")
 
 @bot.tree.command(name="snipe", description="Displays the most recently deleted message")
-@app_commands.describe(page="Page number (optional)")
+@app_commands.describe(page="Page number (1-100)")
 async def snipe_slash(interaction: discord.Interaction, page: int = 1):
     channel = interaction.channel
     if channel.id not in sniped_messages or not sniped_messages[channel.id]:
@@ -274,7 +279,7 @@ async def snipe_slash(interaction: discord.Interaction, page: int = 1):
     embed.add_field(name="**Content:**", value=content, inline=False)
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel.id])}")
+    embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel.id])} (Max: {MAX_MESSAGES})")
 
     # Handle attachments and media links
     media_url = get_media_url(snipe['content'], snipe['attachments'])
@@ -293,7 +298,7 @@ async def snipe_slash(interaction: discord.Interaction, page: int = 1):
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="snipeforce", description="Display unfiltered deleted messages (mod only)")
-@app_commands.describe(page="Page number (optional)")
+@app_commands.describe(page="Page number (1-100)")
 @check_moderator()
 async def snipeforce_slash(interaction: discord.Interaction, page: int = 1):
     channel = interaction.channel
@@ -316,7 +321,7 @@ async def snipeforce_slash(interaction: discord.Interaction, page: int = 1):
     embed.add_field(name="**Content:**", value=content, inline=False)
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(sniped_messages[channel.id])}")
+    embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(sniped_messages[channel.id])} (Max: {MAX_MESSAGES})")
 
     # Handle attachments and media links
     media_url = get_media_url(snipe['content'], snipe['attachments'])
@@ -335,7 +340,7 @@ async def snipeforce_slash(interaction: discord.Interaction, page: int = 1):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="snipeedit", description="Displays the most recently edited message")
-@app_commands.describe(page="Page number (optional)")
+@app_commands.describe(page="Page number (1-100)")
 async def snipeedit_slash(interaction: discord.Interaction, page: int = 1):
     channel = interaction.channel
     if channel.id not in edited_messages or not edited_messages[channel.id]:
@@ -363,7 +368,7 @@ async def snipeedit_slash(interaction: discord.Interaction, page: int = 1):
     embed.add_field(name="**After:**", value=after_content, inline=False)
     embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot | Page {page} of {len(edited_messages[channel.id])}")
+    embed.set_footer(text=f"SnipeBot | Page {page} of {len(edited_messages[channel.id])} (Max: {MAX_MESSAGES})")
     
     # Handle attachments and media links
     media_url = get_media_url(edit['after_content'], edit['attachments'])
@@ -382,7 +387,7 @@ async def snipeedit_slash(interaction: discord.Interaction, page: int = 1):
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="snipeeditforce", description="Display unfiltered edited messages (mod only)")
-@app_commands.describe(page="Page number (optional)")
+@app_commands.describe(page="Page number (1-100)")
 @check_moderator()
 async def snipeeditforce_slash(interaction: discord.Interaction, page: int = 1):
     channel = interaction.channel
@@ -409,7 +414,7 @@ async def snipeeditforce_slash(interaction: discord.Interaction, page: int = 1):
     embed.add_field(name="**After:**", value=after_content, inline=False)
     embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(edited_messages[channel.id])}")
+    embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(edited_messages[channel.id])} (Max: {MAX_MESSAGES})")
     
     # Handle attachments and media links
     media_url = get_media_url(edit['after_content'], edit['attachments'])
@@ -427,28 +432,79 @@ async def snipeeditforce_slash(interaction: discord.Interaction, page: int = 1):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="mess", description="DM a user with a message (requires timeout members permission)")
-@app_commands.describe(member="User to DM", message="The message to send")
-@check_admin_or_permissions(moderate_members=True)  # Admin/owner bypass check
-async def mess(interaction: discord.Interaction, member: discord.Member, message: str):
+# ENHANCED: Cross-server mess command
+@bot.tree.command(name="mess", description="Send a message to someone across any server")
+@app_commands.describe(user="The user to message", message="The message to send")
+async def mess_slash(interaction: discord.Interaction, user: discord.User, message: str):
     try:
-        await member.send(message)
+        # Check if the bot shares a server with the target user
+        shared_guilds = [guild for guild in bot.guilds if guild.get_member(user.id)]
+        
+        if not shared_guilds:
+            await interaction.response.send_message(f"❌ I don't share any servers with {user.mention}.", ephemeral=True)
+            return
+        
+        # Create embed for the message
         embed = discord.Embed(
-            title="✅ Message Sent",
-            description=f"Message sent to {member.mention}.",
-            color=discord.Color.green()
+            title="📨 Cross-Server Message",
+            description=message,
+            color=discord.Color.blue()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    except discord.Forbidden:
+        embed.add_field(name="From:", value=f"{interaction.user.mention} ({interaction.user})", inline=True)
+        embed.add_field(name="Server:", value=interaction.guild.name if interaction.guild else "DM", inline=True)
+        embed.add_field(name="Shared Servers:", value=f"{len(shared_guilds)} server(s)", inline=True)
+        embed.set_footer(text="Use /mess to reply back!")
+        embed.timestamp = discord.utils.utcnow()
+        
+        # Try to send DM
+        try:
+            await user.send(embed=embed)
+            await interaction.response.send_message(f"✅ Message sent to {user.mention} successfully!", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message(f"❌ Cannot send DM to {user.mention}. They may have DMs disabled.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to send message: {str(e)}", ephemeral=True)
+            
+    except Exception as e:
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+# ENHANCED: Prefix version of cross-server mess
+@bot.command(name="mess")
+async def mess_prefix(ctx, user: discord.User, *, message: str):
+    try:
+        # Check if the bot shares a server with the target user
+        shared_guilds = [guild for guild in bot.guilds if guild.get_member(user.id)]
+        
+        if not shared_guilds:
+            await ctx.send(f"❌ I don't share any servers with {user.mention}.")
+            return
+        
+        # Create embed for the message
         embed = discord.Embed(
-            title="❌ Failed to Send",
-            description="Could not send DM. User may have DMs disabled.",
-            color=discord.Color.red()
+            title="📨 Cross-Server Message",
+            description=message,
+            color=discord.Color.blue()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        embed.add_field(name="From:", value=f"{ctx.author.mention} ({ctx.author})", inline=True)
+        embed.add_field(name="Server:", value=ctx.guild.name if ctx.guild else "DM", inline=True)
+        embed.add_field(name="Shared Servers:", value=f"{len(shared_guilds)} server(s)", inline=True)
+        embed.set_footer(text="Use ,mess or /mess to reply back!")
+        embed.timestamp = discord.utils.utcnow()
+        
+        # Try to send DM
+        try:
+            await user.send(embed=embed)
+            await ctx.send(f"✅ Message sent to {user.mention} successfully!")
+        except discord.Forbidden:
+            await ctx.send(f"❌ Cannot send DM to {user.mention}. They may have DMs disabled.")
+        except Exception as e:
+            await ctx.send(f"❌ Failed to send message: {str(e)}")
+            
+    except Exception as e:
+        await ctx.send(f"❌ An error occurred: {str(e)}")
 
 @bot.tree.command(name="reset", description="Reset all sniped and edited messages (requires administrator permission)")
-@check_admin_or_permissions(administrator=True)  # Admin/owner bypass check
+@check_admin_or_permissions(administrator=True)
 async def reset_slash(interaction: discord.Interaction):
     channel_id = interaction.channel.id
     sniped_reset = False
@@ -479,7 +535,7 @@ async def reset_slash(interaction: discord.Interaction):
 
 @bot.tree.command(name="rename", description="Change a user's nickname (requires manage nicknames permission)")
 @app_commands.describe(member="User to rename", nickname="New nickname")
-@check_admin_or_permissions(manage_nicknames=True)  # Admin/owner bypass check
+@check_admin_or_permissions(manage_nicknames=True)
 async def rename_slash(interaction: discord.Interaction, member: discord.Member, nickname: str):
     try:
         old_nick = member.display_name
@@ -536,16 +592,16 @@ async def help_slash(interaction: discord.Interaction):
         description="Available commands:",
         color=discord.Color.blurple()
     )
-    embed.add_field(name="`,snipe` or `/snipe [page]`", value="Show recently deleted messages with content filtering.", inline=False)
-    embed.add_field(name="`,snipeforce` or `/snipeforce [page]`", value="Show unfiltered deleted messages (moderator only).", inline=False)
-    embed.add_field(name="`,snipeedit` or `/snipeedit [page]`", value="Show edited messages with content filtering.", inline=False)
-    embed.add_field(name="`,snipeeditforce` or `/snipeeditforce [page]`", value="Show unfiltered edited messages (moderator only).", inline=False)
-    embed.add_field(name="`,mess @user [message]` or `/mess`", value="Send a DM to a user (requires timeout members permission).", inline=False)
+    embed.add_field(name="`,snipe` or `/snipe [page]`", value="Show recently deleted messages with content filtering (1-100 pages).", inline=False)
+    embed.add_field(name="`,snipeforce` or `/snipeforce [page]`", value="Show unfiltered deleted messages (moderator only, 1-100 pages).", inline=False)
+    embed.add_field(name="`,snipeedit` or `/snipeedit [page]`", value="Show edited messages with content filtering (1-100 pages).", inline=False)
+    embed.add_field(name="`,snipeeditforce` or `/snipeeditforce [page]`", value="Show unfiltered edited messages (moderator only, 1-100 pages).", inline=False)
+    embed.add_field(name="`,mess @user [message]` or `/mess`", value="Send a DM to any user across servers (cross-server messaging).", inline=False)
     embed.add_field(name="`,rename @user [nickname]` or `/rename`", value="Change a user's nickname (requires manage nicknames permission).", inline=False)
     embed.add_field(name="`,reset` or `/reset`", value="Reset all sniped and edited messages (requires administrator permission).", inline=False)
     embed.add_field(name="`,filter` or `/filter`", value="Check content filter status.", inline=False)
     embed.add_field(name="`,help` or `/help`", value="Show this help message.", inline=False)
-    embed.set_footer(text="SnipeBot by Werzzzy | Server owner and administrators bypass all permission requirements")
+    embed.set_footer(text="SnipeBot Enhanced by Werzzzy | Now supports 100 pages & cross-server messaging!")
     await interaction.response.send_message(embed=embed)
 
 @bot.command(aliases=["s"])
@@ -580,7 +636,7 @@ async def snipe(ctx, page: int = 1):
     embed.add_field(name="**Content:**", value=content, inline=False)
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel_id])}")
+    embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel_id])} (Max: {MAX_MESSAGES})")
 
     # Handle attachments and media links
     media_url = get_media_url(snipe['content'], snipe['attachments'])
@@ -631,7 +687,7 @@ async def snipeforce(ctx, page: int = 1):
     embed.add_field(name="**Content:**", value=content, inline=False)
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(sniped_messages[channel_id])}")
+    embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(sniped_messages[channel_id])} (Max: {MAX_MESSAGES})")
 
     # Handle attachments and media links
     media_url = get_media_url(snipe['content'], snipe['attachments'])
@@ -687,7 +743,7 @@ async def snipeedit(ctx, page: int = 1):
     embed.add_field(name="**After:**", value=after_content, inline=False)
     embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot | Page {page} of {len(edited_messages[channel_id])}")
+    embed.set_footer(text=f"SnipeBot | Page {page} of {len(edited_messages[channel_id])} (Max: {MAX_MESSAGES})")
     
     # Handle attachments and media links
     media_url = get_media_url(edit['after_content'], edit['attachments'])
@@ -705,7 +761,7 @@ async def snipeedit(ctx, page: int = 1):
     
     await ctx.send(embed=embed)
 
-@bot.command(aliases=["sef"])
+@bot.command()
 @is_moderator()
 async def snipeeditforce(ctx, page: int = 1):
     channel_id = ctx.channel.id
@@ -742,7 +798,7 @@ async def snipeeditforce(ctx, page: int = 1):
     embed.add_field(name="**After:**", value=after_content, inline=False)
     embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(edited_messages[channel_id])}")
+    embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(edited_messages[channel_id])} (Max: {MAX_MESSAGES})")
     
     # Handle attachments and media links
     media_url = get_media_url(edit['after_content'], edit['attachments'])
@@ -761,26 +817,7 @@ async def snipeeditforce(ctx, page: int = 1):
     await ctx.send(embed=embed)
 
 @bot.command()
-@commands.has_permissions(moderate_members=True)
-async def mess(ctx, member: discord.Member, *, message):
-    try:
-        await member.send(message)
-        embed = discord.Embed(
-            title="✅ Message Sent",
-            description=f"Message sent to {member.mention}.",
-            color=discord.Color.green()
-        )
-        await ctx.send(embed=embed)
-    except discord.Forbidden:
-        embed = discord.Embed(
-            title="❌ Failed to Send",
-            description="Could not send DM. User may have DMs disabled.",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
-
-@bot.command()
-@commands.has_permissions(administrator=True)
+@has_permission_or_is_admin()
 async def reset(ctx):
     channel_id = ctx.channel.id
     sniped_reset = False
@@ -809,9 +846,9 @@ async def reset(ctx):
         )
         await ctx.send(embed=embed)
 
-@bot.command(aliases=["re"])
-@commands.has_permissions(manage_nicknames=True)
-async def rename(ctx, member: discord.Member, *, nickname):
+@bot.command()
+@has_permission_or_is_admin()
+async def rename(ctx, member: discord.Member, *, nickname: str):
     try:
         old_nick = member.display_name
         await member.edit(nick=nickname)
@@ -845,58 +882,50 @@ async def filter(ctx):
     )
     embed.add_field(
         name="Moderator Commands",
-        value="Moderators can use `/snipeforce` and `/snipeeditforce` to view unfiltered content.",
+        value="Moderators can use `,snipeforce` and `,snipeeditforce` to view unfiltered content.",
         inline=False
     )
     await ctx.send(embed=embed)
 
-@bot.command(aliases=["h"])
+@bot.command()
+async def maintainer(ctx):
+    embed = discord.Embed(
+        title="👤 Bot Maintainer",
+        description="This bot is maintained and developed by Werzzzy.",
+        color=discord.Color.blue()
+    )
+    embed.set_footer(text="SnipeBot by Werzzzy-kun")
+    await ctx.send(embed=embed)
+
+@bot.command()
 async def help(ctx):
     embed = discord.Embed(
         title="❓ SnipeBot Help",
         description="Available commands:",
         color=discord.Color.blurple()
     )
-    embed.add_field(name="`,snipe` or `/snipe [page]`", value="Show recently deleted messages with content filtering.", inline=False)
-    embed.add_field(name="`,snipeforce` or `/snipeforce [page]`", value="Show unfiltered deleted messages (moderator only).", inline=False)
-    embed.add_field(name="`,snipeedit` or `/snipeedit [page]`", value="Show edited messages with content filtering.", inline=False)
-    embed.add_field(name="`,snipeeditforce` or `/snipeeditforce [page]`", value="Show unfiltered edited messages (moderator only).", inline=False)
-    embed.add_field(name="`,mess @user [message]` or `/mess`", value="Send a DM to a user (requires timeout members permission).", inline=False)
+    embed.add_field(name="`,snipe [page]` or `/snipe [page]`", value="Show recently deleted messages with content filtering (1-100 pages).", inline=False)
+    embed.add_field(name="`,snipeforce [page]` or `/snipeforce [page]`", value="Show unfiltered deleted messages (moderator only, 1-100 pages).", inline=False)
+    embed.add_field(name="`,snipeedit [page]` or `/snipeedit [page]`", value="Show edited messages with content filtering (1-100 pages).", inline=False)
+    embed.add_field(name="`,snipeeditforce [page]` or `/snipeeditforce [page]`", value="Show unfiltered edited messages (moderator only, 1-100 pages).", inline=False)
+    embed.add_field(name="`,mess @user [message]` or `/mess`", value="Send a DM to any user across servers (cross-server messaging).", inline=False)
     embed.add_field(name="`,rename @user [nickname]` or `/rename`", value="Change a user's nickname (requires manage nicknames permission).", inline=False)
     embed.add_field(name="`,reset` or `/reset`", value="Reset all sniped and edited messages (requires administrator permission).", inline=False)
     embed.add_field(name="`,filter` or `/filter`", value="Check content filter status.", inline=False)
     embed.add_field(name="`,help` or `/help`", value="Show this help message.", inline=False)
-    embed.set_footer(text="SnipeBot by Werzzzy | Server owner and administrators bypass all permission requirements")
+    embed.set_footer(text="SnipeBot Enhanced by Werzzzy | Server owner and administrators bypass all permission requirements")
     await ctx.send(embed=embed)
 
-@mess.error
-@reset.error
-@rename.error
-async def moderator_error(ctx, error):
-    if isinstance(error, commands.MissingPermissions):
-        embed = discord.Embed(
-            title="❌ Permission Denied",
-            description="You don't have the required permissions to use this command.",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
-
-@snipeforce.error
-@snipeeditforce.error
-async def permission_error(ctx, error):
-    if isinstance(error, commands.CheckFailure):
-        embed = discord.Embed(
-            title="❌ Permission Denied",
-            description="Only moderators and administrators can use this command.",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
-
-# Start the flask server and bot
+# Start the bot
 if __name__ == "__main__":
-    run_flask()
-    token = os.environ.get("DISCORD_TOKEN")
+    # Check for Discord token
+    token = os.getenv("DISCORD_TOKEN")
     if not token:
-        print("Error: No Discord token found. Please set the DISCORD_TOKEN environment variable.")
-    else:
-        bot.run(token)
+        print("Error: DISCORD_TOKEN environment variable not set!")
+        exit(1)
+    
+    # Start Flask server
+    run_flask()
+    
+    # Start Discord bot
+    bot.run(token)
