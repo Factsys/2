@@ -691,7 +691,7 @@ async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="es", description="Display the most recently edited message")
+@bot.tree.command(name="es", description="Shortcut for editsnipe")
 @app_commands.describe(page="Page number (1-100)")
 async def es_slash(interaction: discord.Interaction, page: int = 1):
     channel = interaction.channel
@@ -723,65 +723,6 @@ async def es_slash(interaction: discord.Interaction, page: int = 1):
     
     await interaction.response.send_message(embed=embed)
 
-# NEW: Help command - shows the exact content from the screenshot
-@bot.command(name="help")
-async def help_command(ctx):
-    """Display bot commands help"""
-    embed = discord.Embed(
-        title="🤖 SnipeBot Commands",
-        description="*A Discord bot for tracking deleted and edited messages with content filtering.*",
-        color=discord.Color.blue()
-    )
-    
-    # Snipe Commands
-    embed.add_field(
-        name="📜 Snipe Commands",
-        value=(
-            "` ,snipe [page]` — View a deleted message\n"
-            "` ,sp` — View all deleted message pages\n"
-            "` ,snipepages` — Same as ,sp\n"
-            "` ,spforce` — View unfiltered deleted messages (Mods only)"
-        ),
-        inline=False
-    )
-    
-    # Edit Snipe Commands
-    embed.add_field(
-        name="✏️ Edit Snipe Commands",
-        value=(
-            "` ,editsnipe [page]` — View an edited message\n"
-            "` ,es [page]` — Shortcut for ,editsnipe"
-        ),
-        inline=False
-    )
-    
-    # Moderation Commands
-    embed.add_field(
-        name="🛡️ Moderation Commands (Mods only)",
-        value=(
-            "` ,say <message>` — Make the bot send a message\n"
-            "` ,message <user> <msg>` — Send a DM to a user\n"
-            "` ,rename <user> <nickname>` — Change a user's nickname\n"
-            "` ,clear` — Clear all sniped messages"
-        ),
-        inline=False
-    )
-
-    # Management Commands
-    embed.add_field(
-        name="👨‍💻 Management Commands",
-        value=(
-            "` ,manage` — View bot management info\n"
-            "` ,help` — Show this command list"
-        ),
-        inline=False
-    )
-    
-    embed.set_footer(text="Made with ❤ by Werrzzzy")
-    await ctx.send(embed=embed)
-
-
-# NEW: Manage command slash version
 @bot.tree.command(name="manage", description="Display bot management information")
 async def manage_slash(interaction: discord.Interaction):
     """Slash command version of manage"""
@@ -798,7 +739,6 @@ async def manage_slash(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-# NEW: Ping command slash version
 @bot.tree.command(name="ping", description="Show bot latency")
 async def ping_slash(interaction: discord.Interaction):
     """Slash command version of ping"""
@@ -816,10 +756,114 @@ async def ping_slash(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(name="help", description="Show this command list")
+async def help_slash(interaction: discord.Interaction):
+    """Slash command version of help"""
+    embed = discord.Embed(
+        title="🤖 SnipeBot Commands",
+        description="*A Discord bot for tracking deleted and edited messages with content filtering.*",
+        color=discord.Color.blue()
+    )
+    
+    # Snipe Commands
+    embed.add_field(
+        name="📜 Snipe Commands",
+        value=(
+            "` /snipe [page]` — View a deleted message\n"
+            "` /sp` — View all deleted message pages\n"
+            "` /snipepages` — Same as /sp\n"
+            "` /spforce` — View unfiltered deleted messages (Mods only)"
+        ),
+        inline=False
+    )
+    
+    # Edit Snipe Commands
+    embed.add_field(
+        name="✏️ Edit Snipe Commands",
+        value=(
+            "` /editsnipe [page]` — View an edited message\n"
+            "` /es [page]` — Shortcut for /editsnipe"
+        ),
+        inline=False
+    )
+    
+    # Moderation Commands
+    embed.add_field(
+        name="🛡️ Moderation Commands (Mods only)",
+        value=(
+            "` /say <message>` — Make the bot send a message\n"
+            "` /message <user> <msg>` — Send a DM to a user\n"
+            "` /rename <user> <nickname>` — Change a user's nickname\n"
+            "` /clear` — Clear all sniped messages"
+        ),
+        inline=False
+    )
+
+    # Management Commands
+    embed.add_field(
+        name="👨‍💻 Management Commands",
+        value=(
+            "` /manage` — View bot management info\n"
+            "` /help` — Show this command list\n"
+            "` /ping` — Show bot latency"
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="Made with ❤ by Werrzzzy")
+    await interaction.response.send_message(embed=embed)
+
 # ========== PREFIX COMMANDS ==========
 
 @bot.command(name="snipe")
 async def snipe_command(ctx, page: int = 1):
+    """Display the most recently deleted message"""
+    channel = ctx.channel
+    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
+        await ctx.send("No recently deleted messages in this channel.")
+        return
+
+    if page < 1 or page > len(sniped_messages[channel.id]):
+        await ctx.send(f"Page must be between 1 and {len(sniped_messages[channel.id])}.")
+        return
+
+    snipe = sniped_messages[channel.id][-page]
+    embed = discord.Embed(title="📜 Sniped Message", color=discord.Color.gold())
+    
+    # Filter content if it contains offensive words
+    content = snipe['content'] or "*No text content*"
+    if snipe.get('has_offensive_content', False):
+        content = filter_content(content)
+    
+    embed.add_field(name="**Content:**", value=content, inline=False)
+    
+    # Show who deleted the message - if same person or can't detect, show author name
+    deleted_by = snipe.get('deleted_by', snipe['author'])
+    embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
+    
+    embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
+    embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made with ❤ | Werrzzzy")
+
+    # Handle attachments and media links (IMAGES/GIFS/VIDEOS)
+    media_url = get_media_url(snipe['content'], snipe['attachments'])
+    
+    if media_url:
+        embed.set_image(url=media_url)
+    elif snipe["attachments"]:
+        for attachment in snipe["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
+
+    await ctx.send(embed=embed)
+
+# NEW: Add ,s as shortcut for ,snipe
+@bot.command(name="s")
+async def s_command(ctx, page: int = 1):
+    """Shortcut for snipe command"""
     channel = ctx.channel
     if channel.id not in sniped_messages or not sniped_messages[channel.id]:
         await ctx.send("No recently deleted messages in this channel.")
@@ -864,6 +908,7 @@ async def snipe_command(ctx, page: int = 1):
 
 @bot.command(name="sp")
 async def sp_command(ctx):
+    """Display a paginated list of deleted messages"""
     channel = ctx.channel
     if channel.id not in sniped_messages or not sniped_messages[channel.id]:
         await ctx.send("No recently deleted messages in this channel.")
@@ -880,6 +925,7 @@ async def sp_command(ctx):
 
 @bot.command(name="snipepages")
 async def snipepages_command(ctx):
+    """Display a paginated list of deleted messages"""
     channel = ctx.channel
     if channel.id not in sniped_messages or not sniped_messages[channel.id]:
         await ctx.send("No recently deleted messages in this channel.")
@@ -897,6 +943,7 @@ async def snipepages_command(ctx):
 @bot.command(name="spforce")
 @is_moderator()
 async def spforce_command(ctx):
+    """Display unfiltered paginated list of deleted messages (mod only)"""
     channel = ctx.channel
     if channel.id not in sniped_messages or not sniped_messages[channel.id]:
         await ctx.send("No recently deleted messages in this channel.")
@@ -911,75 +958,9 @@ async def spforce_command(ctx):
     
     await ctx.send(embed=embed, view=view)
 
-@bot.command(name="say")
-@is_moderator()
-async def say_command(ctx, *, message):
-    await ctx.message.delete()  # Delete the command message
-    await ctx.send(message)
-
-@bot.command(name="rename")
-@has_manage_nicknames()
-async def rename_command(ctx, member: discord.Member, *, new_nickname):
-    try:
-        old_nick = member.display_name
-        await member.edit(nick=new_nickname)
-        embed = discord.Embed(title="✅ Nickname Changed", color=discord.Color.green())
-        embed.add_field(name="Member", value=member.mention, inline=True)
-        embed.add_field(name="Old Nickname", value=old_nick, inline=True)
-        embed.add_field(name="New Nickname", value=new_nickname, inline=True)
-        embed.set_footer(text="Made with ❤ | Werrzzzy")
-        await ctx.send(embed=embed)
-    except discord.Forbidden:
-        await ctx.send("❌ I don't have permission to change this user's nickname.")
-    except Exception as e:
-        await ctx.send(f"❌ An error occurred: {str(e)}")
-
-@bot.command(name="message")
-@is_moderator()
-async def message_command(ctx, user_search, *, message):
-    try:
-        # Try to find user by ID first
-        try:
-            user = bot.get_user(int(user_search))
-        except ValueError:
-            user = None
-        
-        # If not found by ID, search by name
-        if not user:
-            user = find_user_by_name(ctx.guild, user_search)
-        
-        if not user:
-            await ctx.send(f"❌ No user found matching '{user_search}'.")
-            return
-        
-        # Send simple message (no embed/webhook design)
-        await user.send(message)
-        await ctx.send(f"✅ Message sent to {user.display_name}!")
-    except discord.Forbidden:
-        await ctx.send("❌ Could not send message to this user (they may have DMs disabled).")
-    except Exception as e:
-        await ctx.send(f"❌ An error occurred: {str(e)}")
-
-@bot.command(name="clear")
-@has_permission_or_is_admin()
-async def clear_command(ctx):
-    channel = ctx.channel
-    snipe_count = len(sniped_messages.get(channel.id, []))
-    edit_count = len(edited_messages.get(channel.id, []))
-    
-    if channel.id in sniped_messages:
-        sniped_messages[channel.id] = []
-    if channel.id in edited_messages:
-        edited_messages[channel.id] = []
-    
-    embed = discord.Embed(title="✅ Messages Cleared", color=discord.Color.green())
-    embed.add_field(name="Deleted Messages Cleared", value=str(snipe_count), inline=True)
-    embed.add_field(name="Edited Messages Cleared", value=str(edit_count), inline=True)
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await ctx.send(embed=embed)
-
 @bot.command(name="editsnipe")
 async def editsnipe_command(ctx, page: int = 1):
+    """Display the most recently edited message"""
     channel = ctx.channel
     if channel.id not in edited_messages or not edited_messages[channel.id]:
         await ctx.send("No recently edited messages in this channel.")
@@ -1011,6 +992,7 @@ async def editsnipe_command(ctx, page: int = 1):
 
 @bot.command(name="es")
 async def es_command(ctx, page: int = 1):
+    """Shortcut for editsnipe"""
     channel = ctx.channel
     if channel.id not in edited_messages or not edited_messages[channel.id]:
         await ctx.send("No recently edited messages in this channel.")
@@ -1040,7 +1022,110 @@ async def es_command(ctx, page: int = 1):
     
     await ctx.send(embed=embed)
 
-# NEW: Help command prefix version - shows the exact content from the screenshot
+@bot.command(name="say")
+@is_moderator()
+async def say_command(ctx, *, message):
+    """Make the bot say something (mod only)"""
+    await ctx.message.delete()
+    await ctx.send(message)
+
+@bot.command(name="rename")
+@has_manage_nicknames()
+async def rename_command(ctx, member: discord.Member, *, new_nickname):
+    """Change someone's nickname (requires manage nicknames)"""
+    try:
+        old_nick = member.display_name
+        await member.edit(nick=new_nickname)
+        embed = discord.Embed(title="✅ Nickname Changed", color=discord.Color.green())
+        embed.add_field(name="Member", value=member.mention, inline=True)
+        embed.add_field(name="Old Nickname", value=old_nick, inline=True)
+        embed.add_field(name="New Nickname", value=new_nickname, inline=True)
+        embed.set_footer(text="Made with ❤ | Werrzzzy")
+        await ctx.send(embed=embed)
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to change this user's nickname.")
+    except Exception as e:
+        await ctx.send(f"❌ An error occurred: {str(e)}")
+
+@bot.command(name="message")
+@is_moderator()
+async def message_command(ctx, user_search, *, message):
+    """Send a message to a user (mod only)"""
+    try:
+        # Try to find user by ID first
+        try:
+            user = bot.get_user(int(user_search))
+        except ValueError:
+            user = None
+        
+        # If not found by ID, search by name
+        if not user:
+            user = find_user_by_name(ctx.guild, user_search)
+        
+        if not user:
+            await ctx.send(f"❌ No user found matching '{user_search}'.")
+            return
+        
+        # Send simple message (no embed/webhook design)
+        await user.send(message)
+        await ctx.send(f"✅ Message sent to {user.display_name}!")
+    except discord.Forbidden:
+        await ctx.send("❌ Could not send message to this user (they may have DMs disabled).")
+    except Exception as e:
+        await ctx.send(f"❌ An error occurred: {str(e)}")
+
+@bot.command(name="clear")
+@commands.has_permissions(manage_messages=True)
+async def clear_command(ctx):
+    """Clear all sniped messages (admin only)"""
+    channel = ctx.channel
+    snipe_count = len(sniped_messages.get(channel.id, []))
+    edit_count = len(edited_messages.get(channel.id, []))
+    
+    if channel.id in sniped_messages:
+        sniped_messages[channel.id] = []
+    if channel.id in edited_messages:
+        edited_messages[channel.id] = []
+    
+    embed = discord.Embed(title="✅ Messages Cleared", color=discord.Color.green())
+    embed.add_field(name="Deleted Messages Cleared", value=str(snipe_count), inline=True)
+    embed.add_field(name="Edited Messages Cleared", value=str(edit_count), inline=True)
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
+    await ctx.send(embed=embed)
+
+@bot.command(name="manage")
+async def manage_command(ctx):
+    """Display bot management information"""
+    embed = discord.Embed(
+        title="👨‍💻 Bot Management",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="Created and managed by:",
+        value="werzzz2_",
+        inline=False
+    )
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name="ping")
+async def ping_command(ctx):
+    """Display bot latency"""
+    latency = round(bot.latency * 1000)  # Convert to milliseconds
+    embed = discord.Embed(
+        title="🏓 Pong!",
+        color=discord.Color.green()
+    )
+    embed.add_field(
+        name="Bot Latency:",
+        value=f"{latency}ms",
+        inline=False
+    )
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
+    
+    await ctx.send(embed=embed)
+
 @bot.command(name="help")
 async def help_command(ctx):
     """Display bot commands help"""
@@ -1055,6 +1140,7 @@ async def help_command(ctx):
         name="📜 Snipe Commands",
         value=(
             "` ,snipe [page]` — View a deleted message\n"
+            "` ,s [page]` — Shortcut for ,snipe\n"
             "` ,sp` — View all deleted message pages\n"
             "` ,snipepages` — Same as ,sp\n"
             "` ,spforce` — View unfiltered deleted messages (Mods only)"
@@ -1089,7 +1175,8 @@ async def help_command(ctx):
         name="👨‍💻 Management Commands",
         value=(
             "` ,manage` — View bot management info\n"
-            "` ,help` — Show this command list"
+            "` ,help` — Show this command list\n"
+            "` ,ping` — Show bot latency"
         ),
         inline=False
     )
@@ -1097,49 +1184,8 @@ async def help_command(ctx):
     embed.set_footer(text="Made with ❤ by Werrzzzy")
     await ctx.send(embed=embed)
 
+# ========== BOT STARTUP ==========
 
-# NEW: Manage command prefix version
-@bot.command(name="manage")
-async def manage_command(ctx):
-    """Display bot management information"""
-    embed = discord.Embed(
-        title="👨‍💻 Bot Management",
-        color=discord.Color.blue()
-    )
-    embed.add_field(
-        name="Created and managed by:",
-        value="werzzz2_",
-        inline=False
-    )
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    
-    await ctx.send(embed=embed)
-
-# NEW: Ping command prefix version
-@bot.command(name="ping")
-async def ping_command(ctx):
-    """Display bot latency"""
-    latency = round(bot.latency * 1000)  # Convert to milliseconds
-    embed = discord.Embed(
-        title="🏓 Pong!",
-        color=discord.Color.green()
-    )
-    embed.add_field(
-        name="Bot Latency:",
-        value=f"{latency}ms",
-        inline=False
-    )
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    
-    await ctx.send(embed=embed)
-
-# Run the Flask server
 if __name__ == "__main__":
     run_flask()
-    
-# Run the bot
-TOKEN = os.getenv("DISCORD_TOKEN")
-if TOKEN:
-    bot.run(TOKEN)
-else:
-    print("Error: DISCORD_TOKEN environment variable not found!")
+    bot.run(os.getenv("DISCORD_TOKEN"))
