@@ -437,10 +437,27 @@ async def on_message_delete(message):
     if message.channel.id not in sniped_messages:
         sniped_messages[message.channel.id] = []
     
+    # Try to find who deleted the message from audit logs
+    deleted_by = message.author  # Default to message author (self-delete)
+    
+    try:
+        # Check audit logs to see if someone else deleted it
+        async for entry in message.guild.audit_logs(limit=10, action=discord.AuditLogAction.message_delete):
+            # Check if this audit log entry is for our deleted message
+            if (entry.target.id == message.author.id and 
+                entry.created_at > message.created_at and
+                (discord.utils.utcnow() - entry.created_at).total_seconds() < 5):  # Within 5 seconds
+                deleted_by = entry.user
+                break
+    except (discord.Forbidden, discord.HTTPException, AttributeError):
+        # If we can't access audit logs or there's an error, assume self-delete
+        pass
+    
     # Add offensive content flag to saved messages
     sniped_messages[message.channel.id].append({
         "content": message.content,
         "author": message.author,
+        "deleted_by": deleted_by,
         "attachments": message.attachments,
         "time": message.created_at,
         "has_offensive_content": is_offensive_content(message.content)
@@ -498,7 +515,15 @@ async def snipe_slash(interaction: discord.Interaction, page: int = 1):
         content = filter_content(content)
     
     embed.add_field(name="**Content:**", value=content, inline=False)
-    embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
+    embed.add_field(name="**Author:**", value=snipe['author'].display_name, inline=True)
+    
+    # Show who deleted the message - if same person, just show their name once
+    deleted_by = snipe.get('deleted_by', snipe['author'])
+    if deleted_by.id == snipe['author'].id:
+        embed.add_field(name="**Deleted by:**", value="Themselves", inline=True)
+    else:
+        embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
+    
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made by love ❤ | Werrzzzy")
 
@@ -663,7 +688,7 @@ async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
     
     embed.add_field(name="**Before:**", value=before_content, inline=False)
     embed.add_field(name="**After:**", value=after_content, inline=False)
-    embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
+    embed.add_field(name="**Edited by:**", value=edit['author'].display_name, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made by love ❤ | Werrzzzy")
 
@@ -707,7 +732,15 @@ async def snipe_prefix(ctx, page: int = 1):
         content = filter_content(content)
     
     embed.add_field(name="**Content:**", value=content, inline=False)
-    embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
+    embed.add_field(name="**Author:**", value=snipe['author'].display_name, inline=True)
+    
+    # Show who deleted the message - if same person, just show their name once
+    deleted_by = snipe.get('deleted_by', snipe['author'])
+    if deleted_by.id == snipe['author'].id:
+        embed.add_field(name="**Deleted by:**", value="Themselves", inline=True)
+    else:
+        embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
+    
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made by love ❤ | Werrzzzy")
 
@@ -859,7 +892,7 @@ async def editsnipe_prefix(ctx, page: int = 1):
     
     embed.add_field(name="**Before:**", value=before_content, inline=False)
     embed.add_field(name="**After:**", value=after_content, inline=False)
-    embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
+    embed.add_field(name="**Edited by:**", value=edit['author'].display_name, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made by love ❤ | Werrzzzy")
 
