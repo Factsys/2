@@ -6,6 +6,7 @@ from flask import Flask
 from threading import Thread
 import re
 import math
+import difflib
 
 # Flask app to keep the bot running on Render
 app = Flask('')
@@ -94,6 +95,38 @@ def filter_content(content):
     
     return ' '.join(words)
 
+# Smart user finder function (like Dyno)
+def find_user_by_name(guild, search_term):
+    """Find user by partial name match, similar to Dyno bot"""
+    if not guild:
+        return None
+    
+    search_term = search_term.lower()
+    
+    # First, try exact matches
+    for member in guild.members:
+        if member.display_name.lower() == search_term or member.name.lower() == search_term:
+            return member
+    
+    # Then try partial matches
+    matches = []
+    for member in guild.members:
+        if search_term in member.display_name.lower() or search_term in member.name.lower():
+            matches.append(member)
+    
+    if matches:
+        # Use difflib to find the closest match
+        names = [m.display_name.lower() for m in matches] + [m.name.lower() for m in matches]
+        closest = difflib.get_close_matches(search_term, names, n=1, cutoff=0.3)
+        if closest:
+            closest_name = closest[0]
+            for member in matches:
+                if member.display_name.lower() == closest_name or member.name.lower() == closest_name:
+                    return member
+        return matches[0]  # Return first match if no close match found
+    
+    return None
+
 # Enable intents
 intents = discord.Intents.default()
 intents.messages = True
@@ -157,6 +190,18 @@ def has_permission_or_is_admin():
             return True
         # Otherwise check for the specific permission in the command
         return await commands.has_permissions().predicate(ctx)
+    return commands.check(predicate)
+
+# Custom check for manage nicknames permission
+def has_manage_nicknames():
+    async def predicate(ctx):
+        if not ctx.guild:
+            return False
+        # Check if user is guild owner
+        if ctx.author.id == ctx.guild.owner_id:
+            return True
+        # Check if user has manage nicknames permission
+        return ctx.author.guild_permissions.manage_nicknames
     return commands.check(predicate)
 
 # Custom check for slash commands that allows administrators and owners to bypass
@@ -265,7 +310,7 @@ class RegularSnipePaginationView(discord.ui.View):
         
         # Add page information
         embed.set_footer(
-            text=f"SnipeBot | Page {self.current_page + 1} of {self.total_pages} | Total: {len(self.messages)}"
+            text=f"Page {self.current_page + 1} of {self.total_pages} | Total: {len(self.messages)} | Made by love ❤ | Werrzzzy"
         )
         
         return embed
@@ -349,7 +394,7 @@ class ModeratorSnipePaginationView(discord.ui.View):
         
         # Add page information
         embed.set_footer(
-            text=f"SnipeBot MOD | Page {self.current_page + 1} of {self.total_pages} | Total: {len(self.messages)}"
+            text=f"MOD Page {self.current_page + 1} of {self.total_pages} | Total: {len(self.messages)} | Made by love ❤ | Werrzzzy"
         )
         
         return embed
@@ -455,9 +500,9 @@ async def snipe_slash(interaction: discord.Interaction, page: int = 1):
     embed.add_field(name="**Content:**", value=content, inline=False)
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel.id])} (Max: {MAX_MESSAGES})")
+    embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made by love ❤ | Werrzzzy")
 
-    # Handle attachments and media links
+    # Handle attachments and media links (IMAGES/GIFS/VIDEOS)
     media_url = get_media_url(snipe['content'], snipe['attachments'])
     
     if media_url:
@@ -522,13 +567,14 @@ async def spforce_slash(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, view=view)
 
-@bot.tree.command(name="say", description="Make the bot say something")
+@bot.tree.command(name="say", description="Make the bot say something (mod only)")
 @app_commands.describe(message="The message for the bot to say")
+@check_moderator()
 async def say_slash(interaction: discord.Interaction, message: str):
     await interaction.response.send_message("Message sent!", ephemeral=True)
     await interaction.followup.send(message)
 
-@bot.tree.command(name="rename", description="Change someone's nickname (admin only)")
+@bot.tree.command(name="rename", description="Change someone's nickname (requires manage nicknames)")
 @app_commands.describe(member="The member to rename", new_nickname="The new nickname")
 @check_admin_or_permissions(manage_nicknames=True)
 async def rename_slash(interaction: discord.Interaction, member: discord.Member, new_nickname: str):
@@ -539,32 +585,105 @@ async def rename_slash(interaction: discord.Interaction, member: discord.Member,
         embed.add_field(name="Member", value=member.mention, inline=True)
         embed.add_field(name="Old Nickname", value=old_nick, inline=True)
         embed.add_field(name="New Nickname", value=new_nickname, inline=True)
+        embed.set_footer(text="Made by love ❤ | Werrzzzy")
         await interaction.response.send_message(embed=embed)
     except discord.Forbidden:
         await interaction.response.send_message("❌ I don't have permission to change this user's nickname.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
-@bot.tree.command(name="message", description="Send a message to a user in any server where the bot is present")
-@app_commands.describe(user_id="The user ID to message", message="The message to send")
-async def message_slash(interaction: discord.Interaction, user_id: str, message: str):
+@bot.tree.command(name="message", description="Send a message to a user (mod only)")
+@app_commands.describe(user_search="Username or partial name to find", message="The message to send")
+@check_moderator()
+async def message_slash(interaction: discord.Interaction, user_search: str, message: str):
     try:
-        user = bot.get_user(int(user_id))
+        # Try to find user by ID first
+        try:
+            user = bot.get_user(int(user_search))
+        except ValueError:
+            user = None
+        
+        # If not found by ID, search by name
         if not user:
-            await interaction.response.send_message("❌ User not found.", ephemeral=True)
+            user = find_user_by_name(interaction.guild, user_search)
+        
+        if not user:
+            await interaction.response.send_message(f"❌ No user found matching '{user_search}'.", ephemeral=True)
             return
         
-        embed = discord.Embed(title="📩 Anonymous Message", description=message, color=discord.Color.blue())
-        embed.set_footer(text=f"Sent from {interaction.guild.name}")
-        
-        await user.send(embed=embed)
+        # Send simple message (no embed/webhook design)
+        await user.send(message)
         await interaction.response.send_message(f"✅ Message sent to {user.display_name}!", ephemeral=True)
     except discord.Forbidden:
         await interaction.response.send_message("❌ Could not send message to this user (they may have DMs disabled).", ephemeral=True)
-    except ValueError:
-        await interaction.response.send_message("❌ Invalid user ID.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="clear", description="Clear all sniped messages (admin only)")
+@check_admin_or_permissions(manage_messages=True)
+async def clear_slash(interaction: discord.Interaction):
+    channel = interaction.channel
+    snipe_count = len(sniped_messages.get(channel.id, []))
+    edit_count = len(edited_messages.get(channel.id, []))
+    
+    if channel.id in sniped_messages:
+        sniped_messages[channel.id] = []
+    if channel.id in edited_messages:
+        edited_messages[channel.id] = []
+    
+    embed = discord.Embed(title="✅ Messages Cleared", color=discord.Color.green())
+    embed.add_field(name="Deleted Messages Cleared", value=str(snipe_count), inline=True)
+    embed.add_field(name="Edited Messages Cleared", value=str(edit_count), inline=True)
+    embed.set_footer(text="Made by love ❤ | Werrzzzy")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="editsnipe", description="Display the most recently edited message")
+@app_commands.describe(page="Page number (1-100)")
+async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
+    channel = interaction.channel
+    if channel.id not in edited_messages or not edited_messages[channel.id]:
+        await interaction.response.send_message("No recently edited messages in this channel.", ephemeral=True)
+        return
+
+    if page < 1 or page > len(edited_messages[channel.id]):
+        await interaction.response.send_message(f"Page must be between 1 and {len(edited_messages[channel.id])}.", ephemeral=True)
+        return
+
+    edit = edited_messages[channel.id][-page]
+    embed = discord.Embed(title="✏️ Edited Message", color=discord.Color.blue())
+    
+    # Filter content if it contains offensive words
+    before_content = edit['before_content'] or "*No text content*"
+    after_content = edit['after_content'] or "*No text content*"
+    
+    if edit.get('before_has_offensive_content', False):
+        before_content = filter_content(before_content)
+    if edit.get('after_has_offensive_content', False):
+        after_content = filter_content(after_content)
+    
+    embed.add_field(name="**Before:**", value=before_content, inline=False)
+    embed.add_field(name="**After:**", value=after_content, inline=False)
+    embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
+    embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
+    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made by love ❤ | Werrzzzy")
+
+    # Handle attachments for edited messages too
+    if edit["attachments"]:
+        for attachment in edit["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="es", description="Display the most recently edited message (short)")
+@app_commands.describe(page="Page number (1-100)")
+async def es_slash(interaction: discord.Interaction, page: int = 1):
+    # Same as editsnipe
+    await editsnipe_slash(interaction, page)
 
 # ALL PREFIX COMMANDS
 @bot.command(name="snipe", aliases=["s"])
@@ -590,7 +709,21 @@ async def snipe_prefix(ctx, page: int = 1):
     embed.add_field(name="**Content:**", value=content, inline=False)
     embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel.id])} (Max: {MAX_MESSAGES})")
+    embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made by love ❤ | Werrzzzy")
+
+    # Handle attachments and media links (IMAGES/GIFS/VIDEOS)
+    media_url = get_media_url(snipe['content'], snipe['attachments'])
+    
+    if media_url:
+        embed.set_image(url=media_url)
+    elif snipe["attachments"]:
+        for attachment in snipe["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
 
     await ctx.send(embed=embed)
 
@@ -630,9 +763,9 @@ async def spforce_prefix(ctx):
     await ctx.send(embed=embed, view=view)
 
 @bot.command(name="re", aliases=["rename"])
-@has_permission_or_is_admin()
+@has_manage_nicknames()
 async def rename_prefix(ctx, member: discord.Member, *, new_nickname):
-    """Change someone's nickname (admin only)"""
+    """Change someone's nickname (requires manage nicknames)"""
     try:
         old_nick = member.display_name
         await member.edit(nick=new_nickname)
@@ -640,6 +773,7 @@ async def rename_prefix(ctx, member: discord.Member, *, new_nickname):
         embed.add_field(name="Member", value=member.mention, inline=True)
         embed.add_field(name="Old Nickname", value=old_nick, inline=True)
         embed.add_field(name="New Nickname", value=new_nickname, inline=True)
+        embed.set_footer(text="Made by love ❤ | Werrzzzy")
         await ctx.send(embed=embed)
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to change this user's nickname.")
@@ -647,18 +781,26 @@ async def rename_prefix(ctx, member: discord.Member, *, new_nickname):
         await ctx.send(f"❌ An error occurred: {str(e)}")
 
 @bot.command(name="mess", aliases=["message"])
-async def message_prefix(ctx, user_id: int, *, message):
-    """Send a message to a user in any server where the bot is present"""
+@is_moderator()
+async def message_prefix(ctx, user_search, *, message):
+    """Send a message to a user (mod only) - Smart name detection like Dyno"""
     try:
-        user = bot.get_user(user_id)
+        # Try to find user by ID first
+        try:
+            user = bot.get_user(int(user_search))
+        except ValueError:
+            user = None
+        
+        # If not found by ID, search by name (Dyno-style)
         if not user:
-            await ctx.send("❌ User not found.")
+            user = find_user_by_name(ctx.guild, user_search)
+        
+        if not user:
+            await ctx.send(f"❌ No user found matching '{user_search}'.")
             return
         
-        embed = discord.Embed(title="📩 Anonymous Message", description=message, color=discord.Color.blue())
-        embed.set_footer(text=f"Sent from {ctx.guild.name}")
-        
-        await user.send(embed=embed)
+        # Send simple message (no embed/webhook design)
+        await user.send(message)
         await ctx.send(f"✅ Message sent to {user.display_name}!")
     except discord.Forbidden:
         await ctx.send("❌ Could not send message to this user (they may have DMs disabled).")
@@ -666,10 +808,72 @@ async def message_prefix(ctx, user_id: int, *, message):
         await ctx.send(f"❌ An error occurred: {str(e)}")
 
 @bot.command(name="say")
+@is_moderator()
 async def say_prefix(ctx, *, message):
-    """Make the bot say something"""
+    """Make the bot say something (mod only)"""
     await ctx.message.delete()  # Delete the original command message
     await ctx.send(message)
+
+@bot.command(name="clear")
+@has_permission_or_is_admin()
+async def clear_prefix(ctx):
+    """Clear all sniped messages (admin only)"""
+    channel = ctx.channel
+    snipe_count = len(sniped_messages.get(channel.id, []))
+    edit_count = len(edited_messages.get(channel.id, []))
+    
+    if channel.id in sniped_messages:
+        sniped_messages[channel.id] = []
+    if channel.id in edited_messages:
+        edited_messages[channel.id] = []
+    
+    embed = discord.Embed(title="✅ Messages Cleared", color=discord.Color.green())
+    embed.add_field(name="Deleted Messages Cleared", value=str(snipe_count), inline=True)
+    embed.add_field(name="Edited Messages Cleared", value=str(edit_count), inline=True)
+    embed.set_footer(text="Made by love ❤ | Werrzzzy")
+    await ctx.send(embed=embed)
+
+@bot.command(name="editsnipe", aliases=["es"])
+async def editsnipe_prefix(ctx, page: int = 1):
+    """Display the most recently edited message"""
+    channel = ctx.channel
+    if channel.id not in edited_messages or not edited_messages[channel.id]:
+        await ctx.send("No recently edited messages in this channel.")
+        return
+
+    if page < 1 or page > len(edited_messages[channel.id]):
+        await ctx.send(f"Page must be between 1 and {len(edited_messages[channel.id])}.")
+        return
+
+    edit = edited_messages[channel.id][-page]
+    embed = discord.Embed(title="✏️ Edited Message", color=discord.Color.blue())
+    
+    # Filter content if it contains offensive words
+    before_content = edit['before_content'] or "*No text content*"
+    after_content = edit['after_content'] or "*No text content*"
+    
+    if edit.get('before_has_offensive_content', False):
+        before_content = filter_content(before_content)
+    if edit.get('after_has_offensive_content', False):
+        after_content = filter_content(after_content)
+    
+    embed.add_field(name="**Before:**", value=before_content, inline=False)
+    embed.add_field(name="**After:**", value=after_content, inline=False)
+    embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
+    embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
+    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made by love ❤ | Werrzzzy")
+
+    # Handle attachments for edited messages too
+    if edit["attachments"]:
+        for attachment in edit["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
+
+    await ctx.send(embed=embed)
 
 @bot.command(name="ping")
 async def ping_prefix(ctx):
@@ -693,7 +897,8 @@ async def help_slash(interaction: discord.Interaction):
         value=(
             "`/snipe` or `,snipe` (`,s`) - Show most recent deleted message\n"
             "`/sp` or `,sp` - Show filtered paginated list of deleted messages\n"
-            "`/spforce` or `,spforce` - Show unfiltered paginated list (mod only)"
+            "`/spforce` or `,spforce` - Show unfiltered paginated list (mod only)\n"
+            "`/editsnipe` or `,editsnipe` (`,es`) - Show most recent edited message"
         ),
         inline=False
     )
@@ -701,9 +906,9 @@ async def help_slash(interaction: discord.Interaction):
     embed.add_field(
         name="👤 **User Commands**",
         value=(
-            "`/rename` or `,re` - Change user's nickname (admin only)\n"
-            "`/message` or `,mess` - Send anonymous message to any user\n"
-            "`/say` or `,say` - Make the bot say something"
+            "`/rename` or `,re` - Change user's nickname (requires manage nicknames)\n"
+            "`/message` or `,mess` - Send message to any user (mod only)\n"
+            "`/say` or `,say` - Make the bot say something (mod only)"
         ),
         inline=False
     )
@@ -712,12 +917,13 @@ async def help_slash(interaction: discord.Interaction):
         name="🛠️ **Utility Commands**",
         value=(
             "`/ping` or `,ping` - Check bot latency\n"
+            "`/clear` or `,clear` - Clear all sniped messages (admin only)\n"
             "`/help` or `,help` - Show this help message"
         ),
         inline=False
     )
     
-    embed.set_footer(text="SnipeBot | Moderator commands require manage_messages permission or higher")
+    embed.set_footer(text="Made by love ❤ | Werrzzzy")
     
     await interaction.response.send_message(embed=embed)
 
@@ -735,7 +941,8 @@ async def help_prefix(ctx):
         value=(
             "`,snipe` (`,s`) - Show most recent deleted message\n"
             "`,sp` - Show filtered paginated list of deleted messages\n"
-            "`,spforce` - Show unfiltered paginated list (mod only)"
+            "`,spforce` - Show unfiltered paginated list (mod only)\n"
+            "`,editsnipe` (`,es`) - Show most recent edited message"
         ),
         inline=False
     )
@@ -743,9 +950,9 @@ async def help_prefix(ctx):
     embed.add_field(
         name="👤 **User Commands**",
         value=(
-            "`,re` - Change user's nickname (admin only)\n"
-            "`,mess` - Send anonymous message to any user\n"
-            "`,say` - Make the bot say something"
+            "`,re` - Change user's nickname (requires manage nicknames)\n"
+            "`,mess` - Send message to any user (mod only)\n"
+            "`,say` - Make the bot say something (mod only)"
         ),
         inline=False
     )
@@ -754,6 +961,7 @@ async def help_prefix(ctx):
         name="🛠️ **Utility Commands**",
         value=(
             "`,ping` - Check bot latency\n"
+            "`,clear` - Clear all sniped messages (admin only)\n"
             "`,help` - Show this help message"
         ),
         inline=False
@@ -765,7 +973,7 @@ async def help_prefix(ctx):
         inline=False
     )
     
-    embed.set_footer(text="SnipeBot | Moderator commands require manage_messages permission or higher")
+    embed.set_footer(text="Made by love ❤ | Werrzzzy")
     
     await ctx.send(embed=embed)
 
