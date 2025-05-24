@@ -1107,18 +1107,6 @@ async def help_command(ctx):
         inline=False
     )
     
-    # Notes
-    embed.add_field(
-        name="📋 Notes",
-        value=(
-            "• Stores up to **100 messages** per channel\n"
-            "• Offensive content is **filtered** for regular users\n"
-            "• Moderators can view unfiltered messages using `/spforce`\n"
-            "• Supports both slash (`/`) and prefix (`,`) commands"
-        ),
-        inline=False
-    )
-    
     embed.set_footer(text="Made with ❤ by Werrzzzy")
     await ctx.send(embed=embed)
 
