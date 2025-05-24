@@ -7,8 +7,6 @@ from threading import Thread
 import re
 import math
 import difflib
-import asyncio
-import aiohttp
 
 # Flask app to keep the bot running on Render
 app = Flask('')
@@ -180,41 +178,6 @@ def truncate_content(content, max_length=50):
     if len(content) <= max_length:
         return content
     return content[:max_length-3] + "..."
-
-# GPT-2 function using Hugging Face Inference API
-async def generate_gpt_response(prompt):
-    """Generate response using Hugging Face's free GPT-2 API"""
-    try:
-        url = "https://api-inference.huggingface.co/models/gpt2"
-        headers = {"Authorization": "Bearer hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}  # Free tier
-        
-        payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_length": 150,
-                "temperature": 0.7,
-                "do_sample": True,
-                "pad_token_id": 50256
-            }
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    if isinstance(result, list) and len(result) > 0:
-                        generated_text = result[0].get("generated_text", "")
-                        # Remove the original prompt from the response
-                        if generated_text.startswith(prompt):
-                            generated_text = generated_text[len(prompt):].strip()
-                        return generated_text[:1000] if generated_text else "I couldn't generate a response right now."
-                    return "I couldn't generate a response right now."
-                else:
-                    # Fallback to simple response
-                    return "I'm a simple GPT-2 model. I understand you said: " + prompt[:100] + "..."
-    except Exception as e:
-        # Simple fallback response without external dependencies
-        return f"I'm processing your message: '{prompt[:100]}...' - GPT-2 is thinking about this!"
 
 # Custom check that allows administrators and owners to bypass permission requirements
 def has_permission_or_is_admin():
@@ -693,7 +656,7 @@ async def clear_slash(interaction: discord.Interaction):
     embed.add_field(name="Deleted Messages Cleared", value=str(snipe_count), inline=True)
     embed.add_field(name="Edited Messages Cleared", value=str(edit_count), inline=True)
     embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="editsnipe", description="Display the most recently edited message")
 @app_commands.describe(page="Page number (1-100)")
@@ -708,7 +671,7 @@ async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
         return
 
     edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="✏️ Edited Message", color=discord.Color.blue())
+    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
     
     # Filter content if it contains offensive words
     before_content = edit['before_content'] or "*No text content*"
@@ -721,50 +684,46 @@ async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
     
     embed.add_field(name="**Before:**", value=before_content, inline=False)
     embed.add_field(name="**After:**", value=after_content, inline=False)
-    embed.add_field(name="**Edited by:**", value=edit['author'].display_name, inline=True)
+    embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
-
-    # Handle attachments for edited messages too
-    if edit["attachments"]:
-        for attachment in edit["attachments"]:
-            if attachment.content_type and attachment.content_type.startswith("image"):
-                embed.set_image(url=attachment.url)
-                break
-            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=attachment.url)
-                break
-
+    
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="es", description="Display the most recently edited message (short)")
+@bot.tree.command(name="es", description="Display the most recently edited message")
 @app_commands.describe(page="Page number (1-100)")
 async def es_slash(interaction: discord.Interaction, page: int = 1):
-    # Same as editsnipe
-    await editsnipe_slash(interaction, page)
+    channel = interaction.channel
+    if channel.id not in edited_messages or not edited_messages[channel.id]:
+        await interaction.response.send_message("No recently edited messages in this channel.", ephemeral=True)
+        return
 
-@bot.tree.command(name="gpt", description="Ask GPT-2 a question or give it context")
-@app_commands.describe(context="Your question or prompt for GPT-2")
-async def gpt_slash(interaction: discord.Interaction, context: str):
-    await interaction.response.defer()  # GPT can take a moment
+    if page < 1 or page > len(edited_messages[channel.id]):
+        await interaction.response.send_message(f"Page must be between 1 and {len(edited_messages[channel.id])}.", ephemeral=True)
+        return
+
+    edit = edited_messages[channel.id][-page]
+    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
     
-    try:
-        response = await generate_gpt_response(context)
-        
-        embed = discord.Embed(
-            title="🤖 GPT-2 Response",
-            color=discord.Color.blue()
-        )
-        embed.add_field(name="**Your prompt:**", value=context[:500] + ("..." if len(context) > 500 else ""), inline=False)
-        embed.add_field(name="**GPT-2 says:**", value=response, inline=False)
-        embed.set_footer(text="Made with ❤ | Werrzzzy")
-        
-        await interaction.followup.send(embed=embed)
-    except Exception as e:
-        await interaction.followup.send(f"❌ Error generating response: {str(e)}", ephemeral=True)
+    # Filter content if it contains offensive words
+    before_content = edit['before_content'] or "*No text content*"
+    after_content = edit['after_content'] or "*No text content*"
+    
+    if edit.get('before_has_offensive_content', False):
+        before_content = filter_content(before_content)
+    if edit.get('after_has_offensive_content', False):
+        after_content = filter_content(after_content)
+    
+    embed.add_field(name="**Before:**", value=before_content, inline=False)
+    embed.add_field(name="**After:**", value=after_content, inline=False)
+    embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
+    embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
+    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
+    
+    await interaction.response.send_message(embed=embed)
 
 # ALL PREFIX COMMANDS
-@bot.command(name="snipe", aliases=["s"])
+@bot.command(name="snipe")
 async def snipe_prefix(ctx, page: int = 1):
     """Displays the most recently deleted message"""
     channel = ctx.channel
@@ -809,7 +768,7 @@ async def snipe_prefix(ctx, page: int = 1):
 
     await ctx.send(embed=embed)
 
-@bot.command(name="sp", aliases=["snipepages"])
+@bot.command(name="sp")
 async def sp_prefix(ctx):
     """Display a paginated list of deleted messages (FILTERED)"""
     channel = ctx.channel
@@ -844,7 +803,7 @@ async def spforce_prefix(ctx):
     
     await ctx.send(embed=embed, view=view)
 
-@bot.command(name="re", aliases=["rename"])
+@bot.command(name="rename")
 @has_manage_nicknames()
 async def rename_prefix(ctx, member: discord.Member, *, new_nickname):
     """Change someone's nickname (requires manage nicknames)"""
@@ -862,7 +821,7 @@ async def rename_prefix(ctx, member: discord.Member, *, new_nickname):
     except Exception as e:
         await ctx.send(f"❌ An error occurred: {str(e)}")
 
-@bot.command(name="mess", aliases=["message"])
+@bot.command(name="message")
 @is_moderator()
 async def message_prefix(ctx, user_search, *, message):
     """Send a message to a user (mod only) - Smart name detection like Dyno"""
@@ -873,7 +832,7 @@ async def message_prefix(ctx, user_search, *, message):
         except ValueError:
             user = None
         
-        # If not found by ID, search by name (Dyno-style)
+        # If not found by ID, search by name
         if not user:
             user = find_user_by_name(ctx.guild, user_search)
         
@@ -893,7 +852,7 @@ async def message_prefix(ctx, user_search, *, message):
 @is_moderator()
 async def say_prefix(ctx, *, message):
     """Make the bot say something (mod only)"""
-    await ctx.message.delete()  # Delete the original command message
+    await ctx.message.delete()
     await ctx.send(message)
 
 @bot.command(name="clear")
@@ -915,7 +874,7 @@ async def clear_prefix(ctx):
     embed.set_footer(text="Made with ❤ | Werrzzzy")
     await ctx.send(embed=embed)
 
-@bot.command(name="editsnipe", aliases=["es"])
+@bot.command(name="editsnipe")
 async def editsnipe_prefix(ctx, page: int = 1):
     """Display the most recently edited message"""
     channel = ctx.channel
@@ -928,7 +887,7 @@ async def editsnipe_prefix(ctx, page: int = 1):
         return
 
     edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="✏️ Edited Message", color=discord.Color.blue())
+    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
     
     # Filter content if it contains offensive words
     before_content = edit['before_content'] or "*No text content*"
@@ -941,185 +900,133 @@ async def editsnipe_prefix(ctx, page: int = 1):
     
     embed.add_field(name="**Before:**", value=before_content, inline=False)
     embed.add_field(name="**After:**", value=after_content, inline=False)
-    embed.add_field(name="**Edited by:**", value=edit['author'].display_name, inline=True)
+    embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
-
-    # Handle attachments for edited messages too
-    if edit["attachments"]:
-        for attachment in edit["attachments"]:
-            if attachment.content_type and attachment.content_type.startswith("image"):
-                embed.set_image(url=attachment.url)
-                break
-            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=attachment.url)
-                break
-
+    
     await ctx.send(embed=embed)
-
-@bot.command(name="gpt")
-async def gpt_prefix(ctx, *, context):
-    """Ask GPT-2 a question or give it context"""
-    try:
-        # Send a thinking message first
-        thinking_msg = await ctx.send("🤖 GPT-2 is thinking...")
-        
-        response = await generate_gpt_response(context)
-        
-        embed = discord.Embed(
-            title="🤖 GPT-2 Response",
-            color=discord.Color.blue()
-        )
-        embed.add_field(name="**Your prompt:**", value=context[:500] + ("..." if len(context) > 500 else ""), inline=False)
-        embed.add_field(name="**GPT-2 says:**", value=response, inline=False)
-        embed.set_footer(text="Made with ❤ | Werrzzzy")
-        
-        await thinking_msg.edit(content="", embed=embed)
-    except Exception as e:
-        await ctx.send(f"❌ Error generating response: {str(e)}")
 
 @bot.command(name="ping")
 async def ping_prefix(ctx):
     """Check the bot's latency"""
-    await ctx.send(f"🏓 Pong! Latency: {round(bot.latency * 1000)}ms")
+    latency = round(bot.latency * 1000)
+    embed = discord.Embed(title="🏓 Pong!", color=discord.Color.green())
+    embed.add_field(name="Latency", value=f"{latency}ms", inline=True)
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
+    await ctx.send(embed=embed)
 
 @bot.tree.command(name="ping", description="Check the bot's latency")
 async def ping_slash(interaction: discord.Interaction):
-    await interaction.response.send_message(f"🏓 Pong! Latency: {round(bot.latency * 1000)}ms")
+    latency = round(bot.latency * 1000)
+    embed = discord.Embed(title="🏓 Pong!", color=discord.Color.green())
+    embed.add_field(name="Latency", value=f"{latency}ms", inline=True)
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
+    await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="help", description="Show help message with all commands")
 async def help_slash(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="🛠️ SnipeBot Commands", 
-        description="Here are all available commands:",
-        color=discord.Color.blue()
-    )
+    embed = discord.Embed(title="🤖 Bot Commands", color=discord.Color.blue())
     
     embed.add_field(
         name="📜 **Snipe Commands**",
-        value=(
-            "`/snipe` or `,snipe` (`,s`) - Show most recent deleted message\n"
-            "`/sp` or `,sp` - Show filtered paginated list of deleted messages\n"
-            "`/spforce` or `,spforce` - Show unfiltered paginated list (mod only)\n"
-            "`/editsnipe` or `,editsnipe` (`,es`) - Show most recent edited message"
-        ),
+        value="`/snipe [page]` - View deleted messages\n"
+              "`/sp` - View paginated deleted messages\n"
+              "`/spforce` - View unfiltered messages (mod)\n"
+              "`/editsnipe [page]` - View edited messages",
         inline=False
     )
     
     embed.add_field(
-        name="🤖 **AI Commands**",
-        value=(
-            "`/gpt` or `,gpt` - Ask GPT-2 a question or give it context\n"
-            "Example: `/gpt context:\"Tell me a story\"`"
-        ),
+        name="🔧 **Moderation Commands**",
+        value="`/say <message>` - Make bot say something\n"
+              "`/rename <user> <nick>` - Change nickname\n"
+              "`/message <user> <msg>` - DM a user\n"
+              "`/clear` - Clear all sniped messages",
         inline=False
     )
     
     embed.add_field(
-        name="👤 **User Commands**",
-        value=(
-            "`/rename` or `,re` - Change user's nickname (requires manage nicknames)\n"
-            "`/message` or `,mess` - Send message to any user (mod only)\n"
-            "`/say` or `,say` - Make the bot say something (mod only)"
-        ),
+        name="ℹ️ **Info Commands**",
+        value="`/ping` - Check bot latency\n"
+              "`/help` - Show this help message",
         inline=False
     )
     
     embed.add_field(
-        name="🛠️ **Utility Commands**",
-        value=(
-            "`/ping` or `,ping` - Check bot latency\n"
-            "`/clear` or `,clear` - Clear all sniped messages (admin only)\n"
-            "`/help` or `,help` - Show this help message"
-        ),
+        name="📝 **Prefix Commands**",
+        value="You can also use `,` prefix for all commands!\n"
+              "Example: `,snipe`, `,sp`, `,help`",
         inline=False
     )
     
     embed.set_footer(text="Made with ❤ | Werrzzzy")
-    
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.command(name="help")
 async def help_prefix(ctx):
     """Show help message with all commands"""
-    embed = discord.Embed(
-        title="🛠️ SnipeBot Commands", 
-        description="Here are all available commands:",
-        color=discord.Color.blue()
-    )
+    embed = discord.Embed(title="🤖 Bot Commands", color=discord.Color.blue())
     
     embed.add_field(
         name="📜 **Snipe Commands**",
-        value=(
-            "`,snipe` (`,s`) - Show most recent deleted message\n"
-            "`,sp` - Show filtered paginated list of deleted messages\n"
-            "`,spforce` - Show unfiltered paginated list (mod only)\n"
-            "`,editsnipe` (`,es`) - Show most recent edited message"
-        ),
+        value="`,snipe [page]` - View deleted messages\n"
+              "`,sp` - View paginated deleted messages\n"
+              "`,spforce` - View unfiltered messages (mod)\n"
+              "`,editsnipe [page]` - View edited messages",
         inline=False
     )
     
     embed.add_field(
-        name="🤖 **AI Commands**",
-        value=(
-            "`,gpt` - Ask GPT-2 a question or give it context\n"
-            "Example: `,gpt Tell me a story about robots`"
-        ),
+        name="🔧 **Moderation Commands**",
+        value="`,say <message>` - Make bot say something\n"
+              "`,rename <user> <nick>` - Change nickname\n"
+              "`,message <user> <msg>` - DM a user\n"
+              "`,clear` - Clear all sniped messages",
         inline=False
     )
     
     embed.add_field(
-        name="👤 **User Commands**",
-        value=(
-            "`,re` - Change user's nickname (requires manage nicknames)\n"
-            "`,mess` - Send message to any user (mod only)\n"
-            "`,say` - Make the bot say something (mod only)"
-        ),
+        name="ℹ️ **Info Commands**",
+        value="`,ping` - Check bot latency\n"
+              "`,help` - Show this help message",
         inline=False
     )
     
     embed.add_field(
-        name="🛠️ **Utility Commands**",
-        value=(
-            "`,ping` - Check bot latency\n"
-            "`,clear` - Clear all sniped messages (admin only)\n"
-            "`,help` - Show this help message"
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="📝 **Slash Commands**",
-        value="All commands also work as slash commands (e.g., `/snipe`, `/sp`, `/gpt`, `/help`)",
+        name="⚡ **Slash Commands**",
+        value="You can also use `/` slash commands!\n"
+              "Example: `/snipe`, `/sp`, `/help`",
         inline=False
     )
     
     embed.set_footer(text="Made with ❤ | Werrzzzy")
-    
     await ctx.send(embed=embed)
 
 # Error handling
 @bot.event
 async def on_command_error(ctx, error):
-    if isinstance(error, commands.CheckFailure):
+    if isinstance(error, commands.MissingPermissions):
         await ctx.send("❌ You don't have permission to use this command.")
-    elif isinstance(error, commands.CommandNotFound):
-        pass  # Ignore command not found errors
+    elif isinstance(error, commands.CheckFailure):
+        await ctx.send("❌ You don't have permission to use this command.")
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("❌ Missing required argument. Check `,help` for usage.")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send("❌ Invalid argument. Check `,help` for usage.")
+    else:
+        print(f"Command error: {error}")
 
-@bot.tree.error
+@bot.event
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.CheckFailure):
+    if isinstance(error, app_commands.MissingPermissions):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+    elif isinstance(error, app_commands.CheckFailure):
+        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ An error occurred while processing the command.", ephemeral=True)
+        print(f"Slash command error: {error}")
 
+# Start Flask and Bot
 if __name__ == "__main__":
-    # Start Flask server in background
     run_flask()
-    
-    # Get bot token from environment
-    TOKEN = os.getenv("BOT_TOKEN")
-    if not TOKEN:
-        print("ERROR: BOT_TOKEN environment variable not found!")
-        exit(1)
-    
-    # Run the bot
-    bot.run(TOKEN)
+    bot.run(os.getenv("BOT_TOKEN"))
