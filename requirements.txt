@@ -1,5 +1,9 @@
 discord.py
 aiohttp
-beautifulsoup4
 flask
 gunicorn
+python-dotenv
+psutil
+orjson
+loguru
+aiosqlite
