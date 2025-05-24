@@ -724,9 +724,9 @@ async def es_slash(interaction: discord.Interaction, page: int = 1):
     await interaction.response.send_message(embed=embed)
 
 # NEW: Help command - shows the exact content from the screenshot
-@bot.tree.command(name="help", description="Show this command list")
-async def help_slash(interaction: discord.Interaction):
-    """Slash command version of help"""
+@bot.command(name="help")
+async def help_command(ctx):
+    """Display bot commands help"""
     embed = discord.Embed(
         title="🤖 SnipeBot Commands",
         description="*A Discord bot for tracking deleted and edited messages with content filtering.*",
@@ -737,10 +737,10 @@ async def help_slash(interaction: discord.Interaction):
     embed.add_field(
         name="📜 Snipe Commands",
         value=(
-            "• `/snipe [page]` or `,snipe [page]` — View a deleted message\n"
-            "• `/sp` or `,sp` — View all deleted message pages\n"
-            "• `/snipepages` or `,snipepages` — Same as `/sp`\n"
-            "• `/spforce` or `,spforce` — View unfiltered deleted messages *(Mods only)*"
+            "` ,snipe [page]` — View a deleted message\n"
+            "` ,sp` — View all deleted message pages\n"
+            "` ,snipepages` — Same as ,sp\n"
+            "` ,spforce` — View unfiltered deleted messages (Mods only)"
         ),
         inline=False
     )
@@ -749,49 +749,37 @@ async def help_slash(interaction: discord.Interaction):
     embed.add_field(
         name="✏️ Edit Snipe Commands",
         value=(
-            "• `/editsnipe [page]` or `,editsnipe [page]` — View an edited message\n"
-            "• `/es [page]` or `,es [page]` — Shortcut for `/editsnipe`"
+            "` ,editsnipe [page]` — View an edited message\n"
+            "` ,es [page]` — Shortcut for ,editsnipe"
         ),
         inline=False
     )
     
     # Moderation Commands
     embed.add_field(
-        name="🛡️ Moderation Commands *(Mods only)*",
+        name="🛡️ Moderation Commands (Mods only)",
         value=(
-            "• `/say <message>` or `,say <message>` — Make the bot send a message\n"
-            "• `/message <user> <msg>` or `,message <user> <msg>` — Send a DM to a user\n"
-            "• `/rename <user> <nickname>` or `,rename <user> <nickname>` — Change a user's nickname\n"
-            "• `/clear` or `,clear` — Clear all sniped messages"
+            "` ,say <message>` — Make the bot send a message\n"
+            "` ,message <user> <msg>` — Send a DM to a user\n"
+            "` ,rename <user> <nickname>` — Change a user's nickname\n"
+            "` ,clear` — Clear all sniped messages"
         ),
         inline=False
     )
-    
+
     # Management Commands
     embed.add_field(
-        name="🏗️ Management Commands",
+        name="👨‍💻 Management Commands",
         value=(
-            "• `/manage` or `,manage` — View bot management info\n"
-            "• `/help` or `,help` — Show this command list\n"
-            "• `/ping` or `,ping` — Show bot latency"
-        ),
-        inline=False
-    )
-    
-    # Notes
-    embed.add_field(
-        name="📋 Notes",
-        value=(
-            "• Stores up to **100 messages** per channel\n"
-            "• Offensive content is **filtered** for regular users\n"
-            "• Moderators can view unfiltered messages using `/spforce`\n"
-            "• Supports both slash (`/`) and prefix (`,`) commands"
+            "` ,manage` — View bot management info\n"
+            "` ,help` — Show this command list"
         ),
         inline=False
     )
     
     embed.set_footer(text="Made with ❤ by Werrzzzy")
-    await interaction.response.send_message(embed=embed)
+    await ctx.send(embed=embed)
+
 
 # NEW: Manage command slash version
 @bot.tree.command(name="manage", description="Display bot management information")
