@@ -1066,10 +1066,10 @@ async def help_command(ctx):
     embed.add_field(
         name="📜 Snipe Commands",
         value=(
-            "• `/snipe [page]` or `,snipe [page]` — View a deleted message\n"
-            "• `/sp` or `,sp` — View all deleted message pages\n"
-            "• `/snipepages` or `,snipepages` — Same as `/sp`\n"
-            "• `/spforce` or `,spforce` — View unfiltered deleted messages *(Mods only)*"
+            "` ,snipe [page]` — View a deleted message\n"
+            "` ,sp` — View all deleted message pages\n"
+            "` ,snipepages` — Same as ,sp\n"
+            "` ,spforce` — View unfiltered deleted messages (Mods only)"
         ),
         inline=False
     )
@@ -1078,37 +1078,37 @@ async def help_command(ctx):
     embed.add_field(
         name="✏️ Edit Snipe Commands",
         value=(
-            "• `/editsnipe [page]` or `,editsnipe [page]` — View an edited message\n"
-            "• `/es [page]` or `,es [page]` — Shortcut for `/editsnipe`"
+            "` ,editsnipe [page]` — View an edited message\n"
+            "` ,es [page]` — Shortcut for ,editsnipe"
         ),
         inline=False
     )
     
     # Moderation Commands
     embed.add_field(
-        name="🛡️ Moderation Commands *(Mods only)*",
+        name="🛡️ Moderation Commands (Mods only)",
         value=(
-            "• `/say <message>` or `,say <message>` — Make the bot send a message\n"
-            "• `/message <user> <msg>` or `,message <user> <msg>` — Send a DM to a user\n"
-            "• `/rename <user> <nickname>` or `,rename <user> <nickname>` — Change a user's nickname\n"
-            "• `/clear` or `,clear` — Clear all sniped messages"
+            "` ,say <message>` — Make the bot send a message\n"
+            "` ,message <user> <msg>` — Send a DM to a user\n"
+            "` ,rename <user> <nickname>` — Change a user's nickname\n"
+            "` ,clear` — Clear all sniped messages"
         ),
         inline=False
     )
-    
+
     # Management Commands
     embed.add_field(
-        name="🏗️ Management Commands",
+        name="👨‍💻 Management Commands",
         value=(
-            "• `/manage` or `,manage` — View bot management info\n"
-            "• `/help` or `,help` — Show this command list\n"
-            "• `/ping` or `,ping` — Show bot latency"
+            "` ,manage` — View bot management info\n"
+            "` ,help` — Show this command list"
         ),
         inline=False
     )
     
     embed.set_footer(text="Made with ❤ by Werrzzzy")
     await ctx.send(embed=embed)
+
 
 # NEW: Manage command prefix version
 @bot.command(name="manage")
