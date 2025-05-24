@@ -722,7 +722,7 @@ async def es_slash(interaction: discord.Interaction, page: int = 1):
     
     await interaction.response.send_message(embed=embed)
 
-# NEW MANAGE COMMANDS - Added here
+# NEW: MANAGE COMMAND ADDED HERE
 @bot.tree.command(name="manage", description="Display bot management information")
 async def manage_slash(interaction: discord.Interaction):
     """Slash command version of manage"""
@@ -739,9 +739,9 @@ async def manage_slash(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-# ALL PREFIX COMMANDS
-@bot.command(name="snipe")
-async def snipe_prefix(ctx, page: int = 1):
+# PREFIX COMMANDS
+@bot.command(name="snipe", aliases=["s"])
+async def snipe_command(ctx, page: int = 1):
     channel = ctx.channel
     if channel.id not in sniped_messages or not sniped_messages[channel.id]:
         await ctx.send("No recently deleted messages in this channel.")
@@ -785,7 +785,7 @@ async def snipe_prefix(ctx, page: int = 1):
     await ctx.send(embed=embed)
 
 @bot.command(name="sp")
-async def sp_prefix(ctx):
+async def sp_command(ctx):
     channel = ctx.channel
     if channel.id not in sniped_messages or not sniped_messages[channel.id]:
         await ctx.send("No recently deleted messages in this channel.")
@@ -801,7 +801,7 @@ async def sp_prefix(ctx):
     await ctx.send(embed=embed, view=view)
 
 @bot.command(name="snipepages")
-async def snipepages_prefix(ctx):
+async def snipepages_command(ctx):
     channel = ctx.channel
     if channel.id not in sniped_messages or not sniped_messages[channel.id]:
         await ctx.send("No recently deleted messages in this channel.")
@@ -818,7 +818,7 @@ async def snipepages_prefix(ctx):
 
 @bot.command(name="spforce")
 @is_moderator()
-async def spforce_prefix(ctx):
+async def spforce_command(ctx):
     channel = ctx.channel
     if channel.id not in sniped_messages or not sniped_messages[channel.id]:
         await ctx.send("No recently deleted messages in this channel.")
@@ -835,13 +835,13 @@ async def spforce_prefix(ctx):
 
 @bot.command(name="say")
 @is_moderator()
-async def say_prefix(ctx, *, message):
+async def say_command(ctx, *, message):
     await ctx.message.delete()
     await ctx.send(message)
 
 @bot.command(name="rename")
 @has_manage_nicknames()
-async def rename_prefix(ctx, member: discord.Member, *, new_nickname):
+async def rename_command(ctx, member: discord.Member, *, new_nickname):
     try:
         old_nick = member.display_name
         await member.edit(nick=new_nickname)
@@ -858,7 +858,7 @@ async def rename_prefix(ctx, member: discord.Member, *, new_nickname):
 
 @bot.command(name="message")
 @is_moderator()
-async def message_prefix(ctx, user_search, *, message):
+async def message_command(ctx, user_search, *, message):
     try:
         # Try to find user by ID first
         try:
@@ -883,8 +883,8 @@ async def message_prefix(ctx, user_search, *, message):
         await ctx.send(f"❌ An error occurred: {str(e)}")
 
 @bot.command(name="clear")
-@has_permission_or_is_admin()
-async def clear_prefix(ctx):
+@commands.has_permissions(manage_messages=True)
+async def clear_command(ctx):
     channel = ctx.channel
     snipe_count = len(sniped_messages.get(channel.id, []))
     edit_count = len(edited_messages.get(channel.id, []))
@@ -900,8 +900,8 @@ async def clear_prefix(ctx):
     embed.set_footer(text="Made with ❤ | Werrzzzy")
     await ctx.send(embed=embed)
 
-@bot.command(name="editsnipe")
-async def editsnipe_prefix(ctx, page: int = 1):
+@bot.command(name="editsnipe", aliases=["es"])
+async def editsnipe_command(ctx, page: int = 1):
     channel = ctx.channel
     if channel.id not in edited_messages or not edited_messages[channel.id]:
         await ctx.send("No recently edited messages in this channel.")
@@ -931,38 +931,7 @@ async def editsnipe_prefix(ctx, page: int = 1):
     
     await ctx.send(embed=embed)
 
-@bot.command(name="es")
-async def es_prefix(ctx, page: int = 1):
-    channel = ctx.channel
-    if channel.id not in edited_messages or not edited_messages[channel.id]:
-        await ctx.send("No recently edited messages in this channel.")
-        return
-
-    if page < 1 or page > len(edited_messages[channel.id]):
-        await ctx.send(f"Page must be between 1 and {len(edited_messages[channel.id])}.")
-        return
-
-    edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
-    
-    # Filter content if it contains offensive words
-    before_content = edit['before_content'] or "*No text content*"
-    after_content = edit['after_content'] or "*No text content*"
-    
-    if edit.get('before_has_offensive_content', False):
-        before_content = filter_content(before_content)
-    if edit.get('after_has_offensive_content', False):
-        after_content = filter_content(after_content)
-    
-    embed.add_field(name="**Before:**", value=before_content, inline=False)
-    embed.add_field(name="**After:**", value=after_content, inline=False)
-    embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
-    embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
-    
-    await ctx.send(embed=embed)
-
-# NEW MANAGE PREFIX COMMAND - Added here
+# NEW: PREFIX MANAGE COMMAND ADDED HERE
 @bot.command(name="manage")
 async def manage_command(ctx):
     """Display bot management information"""
@@ -979,20 +948,17 @@ async def manage_command(ctx):
     
     await ctx.send(embed=embed)
 
-# Custom help command
+# HELP COMMANDS
 @bot.command(name="help")
 async def help_command(ctx):
-    embed = discord.Embed(
-        title="🤖 SnipeBot Commands",
-        description="Here are all available commands:",
-        color=discord.Color.blue()
-    )
+    embed = discord.Embed(title="🤖 SnipeBot Commands", color=discord.Color.blue())
+    embed.description = "A Discord bot for tracking deleted and edited messages with content filtering."
     
-    # Message Snipe Commands
+    # Snipe Commands
     embed.add_field(
-        name="📜 **Message Snipe Commands**",
-        value="`/snipe [page]` or `,snipe [page]` - View deleted messages\n"
-              "`/sp` or `,sp` - Paginated list of deleted messages\n"
+        name="📜 **Snipe Commands**",
+        value="`/snipe [page]` or `,snipe [page]` - Show deleted message\n"
+              "`/sp` or `,sp` - List all deleted messages (pages)\n"
               "`/snipepages` or `,snipepages` - Same as sp\n"
               "`/spforce` or `,spforce` - Unfiltered list (mods only)",
         inline=False
@@ -1001,44 +967,51 @@ async def help_command(ctx):
     # Edit Snipe Commands
     embed.add_field(
         name="📝 **Edit Snipe Commands**",
-        value="`/editsnipe [page]` or `,editsnipe [page]` - View edited messages\n"
-              "`/es [page]` or `,es [page]` - Same as editsnipe",
+        value="`/editsnipe [page]` or `,editsnipe [page]` - Show edited message\n"
+              "`/es [page]` or `,es [page]` - Alias for editsnipe",
         inline=False
     )
     
     # Moderation Commands
     embed.add_field(
-        name="🛡️ **Moderation Commands**",
+        name="🛡️ **Moderation Commands** (Mods Only)",
         value="`/say <message>` or `,say <message>` - Make bot say something\n"
+              "`/message <user> <msg>` or `,message <user> <msg>` - DM a user\n"
               "`/rename <user> <nickname>` or `,rename <user> <nickname>` - Change nickname\n"
-              "`/message <user> <message>` or `,message <user> <message>` - DM a user\n"
-              "`/clear` or `,clear` - Clear all stored messages",
+              "`/clear` or `,clear` - Clear all sniped messages",
         inline=False
     )
     
     # Management Commands
     embed.add_field(
         name="👨‍💻 **Management Commands**",
-        value="`/manage` or `,manage` - View bot management info",
+        value="`/manage` or `,manage` - Show bot management info\n"
+              "`/help` or `,help` - Show this help message",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="ℹ️ **Notes**",
+        value="• Bot stores up to 100 messages per channel\n"
+              "• Offensive content is filtered for regular users\n"
+              "• Moderators can see unfiltered content with `/spforce`\n"
+              "• Both slash (/) and prefix (,) commands work",
         inline=False
     )
     
     embed.set_footer(text="Made with ❤ | Werrzzzy")
     await ctx.send(embed=embed)
 
-@bot.tree.command(name="help", description="Show all bot commands")
+@bot.tree.command(name="help", description="Show all available commands")
 async def help_slash(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="🤖 SnipeBot Commands",
-        description="Here are all available commands:",
-        color=discord.Color.blue()
-    )
+    embed = discord.Embed(title="🤖 SnipeBot Commands", color=discord.Color.blue())
+    embed.description = "A Discord bot for tracking deleted and edited messages with content filtering."
     
-    # Message Snipe Commands
+    # Snipe Commands
     embed.add_field(
-        name="📜 **Message Snipe Commands**",
-        value="`/snipe [page]` or `,snipe [page]` - View deleted messages\n"
-              "`/sp` or `,sp` - Paginated list of deleted messages\n"
+        name="📜 **Snipe Commands**",
+        value="`/snipe [page]` or `,snipe [page]` - Show deleted message\n"
+              "`/sp` or `,sp` - List all deleted messages (pages)\n"
               "`/snipepages` or `,snipepages` - Same as sp\n"
               "`/spforce` or `,spforce` - Unfiltered list (mods only)",
         inline=False
@@ -1047,33 +1020,61 @@ async def help_slash(interaction: discord.Interaction):
     # Edit Snipe Commands
     embed.add_field(
         name="📝 **Edit Snipe Commands**",
-        value="`/editsnipe [page]` or `,editsnipe [page]` - View edited messages\n"
-              "`/es [page]` or `,es [page]` - Same as editsnipe",
+        value="`/editsnipe [page]` or `,editsnipe [page]` - Show edited message\n"
+              "`/es [page]` or `,es [page]` - Alias for editsnipe",
         inline=False
     )
     
     # Moderation Commands
     embed.add_field(
-        name="🛡️ **Moderation Commands**",
+        name="🛡️ **Moderation Commands** (Mods Only)",
         value="`/say <message>` or `,say <message>` - Make bot say something\n"
+              "`/message <user> <msg>` or `,message <user> <msg>` - DM a user\n"
               "`/rename <user> <nickname>` or `,rename <user> <nickname>` - Change nickname\n"
-              "`/message <user> <message>` or `,message <user> <message>` - DM a user\n"
-              "`/clear` or `,clear` - Clear all stored messages",
+              "`/clear` or `,clear` - Clear all sniped messages",
         inline=False
     )
     
     # Management Commands
     embed.add_field(
         name="👨‍💻 **Management Commands**",
-        value="`/manage` or `,manage` - View bot management info",
+        value="`/manage` or `,manage` - Show bot management info\n"
+              "`/help` or `,help` - Show this help message",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="ℹ️ **Notes**",
+        value="• Bot stores up to 100 messages per channel\n"
+              "• Offensive content is filtered for regular users\n"
+              "• Moderators can see unfiltered content with `/spforce`\n"
+              "• Both slash (/) and prefix (,) commands work",
         inline=False
     )
     
     embed.set_footer(text="Made with ❤ | Werrzzzy")
     await interaction.response.send_message(embed=embed)
 
+# Error handling
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        return
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("❌ You don't have permission to use this command.")
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("❌ Missing required argument. Use `,help` for command usage.")
+    else:
+        print(f"An error occurred: {error}")
+
 # Start Flask server
+run_flask()
+
+# Run the bot
 if __name__ == "__main__":
-    run_flask()
-    # Replace 'YOUR_BOT_TOKEN' with your actual bot token
-    bot.run('YOUR_BOT_TOKEN')
+    TOKEN = os.getenv('DISCORD_TOKEN')
+    if not TOKEN:
+        print("❌ Error: DISCORD_TOKEN environment variable not found!")
+        print("Please set your Discord bot token in the environment variables.")
+    else:
+        bot.run(TOKEN)
