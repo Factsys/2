@@ -205,13 +205,12 @@ def check_moderator():
                 interaction.user.guild_permissions.ban_members)
     return app_commands.check(predicate)
 
-# Pagination View for Snipe Pages
-class SnipePaginationView(discord.ui.View):
-    def __init__(self, messages, channel, is_moderator=False, timeout=300):
+# REGULAR Pagination View for ,sp (FILTERED CONTENT)
+class RegularSnipePaginationView(discord.ui.View):
+    def __init__(self, messages, channel, timeout=300):
         super().__init__(timeout=timeout)
         self.messages = messages
         self.channel = channel
-        self.is_moderator = is_moderator
         self.current_page = 0
         self.total_pages = math.ceil(len(messages) / MESSAGES_PER_PAGE)
         
@@ -229,18 +228,11 @@ class SnipePaginationView(discord.ui.View):
         end_idx = min(start_idx + MESSAGES_PER_PAGE, len(self.messages))
         page_messages = self.messages[start_idx:end_idx]
         
-        # Create embed
-        if self.is_moderator:
-            embed = discord.Embed(
-                title="🔒 Moderator Snipe Pages (Unfiltered)",
-                color=discord.Color.dark_red()
-            )
-            embed.description = "⚠️ **Warning:** Some messages may contain offensive content."
-        else:
-            embed = discord.Embed(
-                title="📜 Deleted Messages List",
-                color=discord.Color.gold()
-            )
+        # Create embed for REGULAR users
+        embed = discord.Embed(
+            title="📜 Deleted Messages List",
+            color=discord.Color.gold()
+        )
         
         if not page_messages:
             embed.add_field(
@@ -249,13 +241,13 @@ class SnipePaginationView(discord.ui.View):
                 inline=False
             )
         else:
-            # Build numbered list of messages
+            # Build numbered list of messages - ALWAYS FILTER FOR REGULAR USERS
             message_list = []
             for i, msg in enumerate(page_messages, start=start_idx + 1):
                 content = msg['content'] or "*No text content*"
                 
-                # Apply filtering if not moderator view
-                if not self.is_moderator and msg.get('has_offensive_content', False):
+                # ALWAYS filter offensive content for regular users
+                if msg.get('has_offensive_content', False):
                     content = filter_content(content)
                 
                 # Truncate content for list view
@@ -273,12 +265,12 @@ class SnipePaginationView(discord.ui.View):
         
         # Add page information
         embed.set_footer(
-            text=f"SnipeBot {'MOD' if self.is_moderator else ''} | Page {self.current_page + 1} of {self.total_pages} | Total: {len(self.messages)}"
+            text=f"SnipeBot | Page {self.current_page + 1} of {self.total_pages} | Total: {len(self.messages)}"
         )
         
         return embed
     
-    @discord.ui.button(label="<", style=discord.ButtonStyle.secondary, emoji="◀️")
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page > 0:
             self.current_page -= 1
@@ -288,7 +280,7 @@ class SnipePaginationView(discord.ui.View):
         else:
             await interaction.response.defer()
     
-    @discord.ui.button(label=">", style=discord.ButtonStyle.secondary, emoji="▶️")
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page < self.total_pages - 1:
             self.current_page += 1
@@ -297,19 +289,90 @@ class SnipePaginationView(discord.ui.View):
             await interaction.response.edit_message(embed=embed, view=self)
         else:
             await interaction.response.defer()
-    
-    async def on_timeout(self):
-        # Disable all buttons when view times out
-        for item in self.children:
-            item.disabled = True
+
+# MODERATOR Pagination View for ,spforce (UNFILTERED CONTENT)
+class ModeratorSnipePaginationView(discord.ui.View):
+    def __init__(self, messages, channel, timeout=300):
+        super().__init__(timeout=timeout)
+        self.messages = messages
+        self.channel = channel
+        self.current_page = 0
+        self.total_pages = math.ceil(len(messages) / MESSAGES_PER_PAGE)
         
-        # Try to edit the message to show disabled buttons
-        try:
+        # Update button states
+        self.update_buttons()
+    
+    def update_buttons(self):
+        # Update button states based on current page
+        self.previous_button.disabled = self.current_page == 0
+        self.next_button.disabled = self.current_page >= self.total_pages - 1
+    
+    def get_embed(self):
+        # Calculate start and end indices for current page
+        start_idx = self.current_page * MESSAGES_PER_PAGE
+        end_idx = min(start_idx + MESSAGES_PER_PAGE, len(self.messages))
+        page_messages = self.messages[start_idx:end_idx]
+        
+        # Create embed for MODERATORS
+        embed = discord.Embed(
+            title="🔒 Moderator Snipe Pages (Unfiltered)",
+            color=discord.Color.dark_red()
+        )
+        embed.description = "⚠️ **Warning:** Some messages may contain offensive content."
+        
+        if not page_messages:
+            embed.add_field(
+                name="No Messages",
+                value="No deleted messages found in this channel.",
+                inline=False
+            )
+        else:
+            # Build numbered list of messages - NEVER FILTER FOR MODERATORS
+            message_list = []
+            for i, msg in enumerate(page_messages, start=start_idx + 1):
+                content = msg['content'] or "*No text content*"
+                
+                # NEVER filter content for moderators - show everything raw
+                
+                # Truncate content for list view
+                content = truncate_content(content, 80)
+                
+                # Format: "1. Hi {username}"
+                message_entry = f"{i}. {content} **-{msg['author'].display_name}**"
+                message_list.append(message_entry)
+            
+            embed.add_field(
+                name="Messages",
+                value="\n".join(message_list),
+                inline=False
+            )
+        
+        # Add page information
+        embed.set_footer(
+            text=f"SnipeBot MOD | Page {self.current_page + 1} of {self.total_pages} | Total: {len(self.messages)}"
+        )
+        
+        return embed
+    
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary)
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_buttons()
             embed = self.get_embed()
-            embed.set_footer(text=f"{embed.footer.text} | (Interaction timed out)")
-            await self.message.edit(embed=embed, view=self)
-        except:
-            pass
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+    
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            self.update_buttons()
+            embed = self.get_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
 
 @bot.event
 async def on_ready():
@@ -368,10 +431,7 @@ async def on_message_edit(before, after):
     if len(edited_messages[before.channel.id]) > MAX_MESSAGES:
         edited_messages[before.channel.id].pop(0)
 
-@bot.tree.command(name="ping", description="Check the bot's latency")
-async def ping(interaction: discord.Interaction):
-    await interaction.response.send_message(f"Pong! Latency: {round(bot.latency * 1000)}ms")
-
+# ALL SLASH COMMANDS
 @bot.tree.command(name="snipe", description="Displays the most recently deleted message")
 @app_commands.describe(page="Page number (1-100)")
 async def snipe_slash(interaction: discord.Interaction, page: int = 1):
@@ -413,47 +473,21 @@ async def snipe_slash(interaction: discord.Interaction, page: int = 1):
 
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="snipeforce", description="Display unfiltered deleted messages (mod only)")
-@app_commands.describe(page="Page number (1-100)")
-@check_moderator()
-async def snipeforce_slash(interaction: discord.Interaction, page: int = 1):
+@bot.tree.command(name="sp", description="Display a paginated list of deleted messages")
+async def sp_slash(interaction: discord.Interaction):
     channel = interaction.channel
     if channel.id not in sniped_messages or not sniped_messages[channel.id]:
         await interaction.response.send_message("No recently deleted messages in this channel.", ephemeral=True)
         return
 
-    if page < 1 or page > len(sniped_messages[channel.id]):
-        await interaction.response.send_message(f"Page must be between 1 and {len(sniped_messages[channel.id])}.", ephemeral=True)
-        return
-
-    snipe = sniped_messages[channel.id][-page]
-    embed = discord.Embed(title="🔒 Moderator Snipe (Unfiltered)", color=discord.Color.dark_red())
+    # Reverse the messages to show newest first
+    messages = list(reversed(sniped_messages[channel.id]))
     
-    # Show unfiltered content
-    content = snipe['content'] or "*No text content*"
-    if snipe.get('has_offensive_content', False):
-        embed.description = "⚠️ **Warning:** This message contains offensive content."
+    # Use REGULAR pagination view (filtered content)
+    view = RegularSnipePaginationView(messages, channel)
+    embed = view.get_embed()
     
-    embed.add_field(name="**Content:**", value=content, inline=False)
-    embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
-    embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(sniped_messages[channel.id])} (Max: {MAX_MESSAGES})")
-
-    # Handle attachments and media links
-    media_url = get_media_url(snipe['content'], snipe['attachments'])
-    
-    if media_url:
-        embed.set_image(url=media_url)
-    elif snipe["attachments"]:
-        for attachment in snipe["attachments"]:
-            if attachment.content_type and attachment.content_type.startswith("image"):
-                embed.set_image(url=attachment.url)
-                break
-            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=attachment.url)
-                break
-
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, view=view)
 
 @bot.tree.command(name="snipepages", description="Display a paginated list of deleted messages")
 async def snipepages_slash(interaction: discord.Interaction):
@@ -465,27 +499,11 @@ async def snipepages_slash(interaction: discord.Interaction):
     # Reverse the messages to show newest first
     messages = list(reversed(sniped_messages[channel.id]))
     
-    view = SnipePaginationView(messages, channel, is_moderator=False)
+    # Use REGULAR pagination view (filtered content)
+    view = RegularSnipePaginationView(messages, channel)
     embed = view.get_embed()
     
     await interaction.response.send_message(embed=embed, view=view)
-    view.message = await interaction.original_response()
-
-@bot.tree.command(name="sp", description="Display a paginated list of deleted messages")
-async def sp_slash(interaction: discord.Interaction):
-    channel = interaction.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await interaction.response.send_message("No recently deleted messages in this channel.", ephemeral=True)
-        return
-
-    # Reverse the messages to show newest first
-    messages = list(reversed(sniped_messages[channel.id]))
-    
-    view = SnipePaginationView(messages, channel, is_moderator=False)
-    embed = view.get_embed()
-    
-    await interaction.response.send_message(embed=embed, view=view)
-    view.message = await interaction.original_response()
 
 @bot.tree.command(name="spforce", description="Display unfiltered paginated list of deleted messages (mod only)")
 @check_moderator()
@@ -498,48 +516,58 @@ async def spforce_slash(interaction: discord.Interaction):
     # Reverse the messages to show newest first
     messages = list(reversed(sniped_messages[channel.id]))
     
-    view = SnipePaginationView(messages, channel, is_moderator=True)
+    # Use MODERATOR pagination view (unfiltered content)
+    view = ModeratorSnipePaginationView(messages, channel)
     embed = view.get_embed()
     
     await interaction.response.send_message(embed=embed, view=view)
-    view.message = await interaction.original_response()
 
-@bot.command(name="sp", aliases=["snipepages"])
-async def sp_prefix(ctx):
-    """Display a paginated list of deleted messages"""
-    channel = ctx.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await ctx.send("No recently deleted messages in this channel.")
-        return
+@bot.tree.command(name="say", description="Make the bot say something")
+@app_commands.describe(message="The message for the bot to say")
+async def say_slash(interaction: discord.Interaction, message: str):
+    await interaction.response.send_message("Message sent!", ephemeral=True)
+    await interaction.followup.send(message)
 
-    # Reverse the messages to show newest first
-    messages = list(reversed(sniped_messages[channel.id]))
-    
-    view = SnipePaginationView(messages, channel, is_moderator=False)
-    embed = view.get_embed()
-    
-    message = await ctx.send(embed=embed, view=view)
-    view.message = message
+@bot.tree.command(name="rename", description="Change someone's nickname (admin only)")
+@app_commands.describe(member="The member to rename", new_nickname="The new nickname")
+@check_admin_or_permissions(manage_nicknames=True)
+async def rename_slash(interaction: discord.Interaction, member: discord.Member, new_nickname: str):
+    try:
+        old_nick = member.display_name
+        await member.edit(nick=new_nickname)
+        embed = discord.Embed(title="✅ Nickname Changed", color=discord.Color.green())
+        embed.add_field(name="Member", value=member.mention, inline=True)
+        embed.add_field(name="Old Nickname", value=old_nick, inline=True)
+        embed.add_field(name="New Nickname", value=new_nickname, inline=True)
+        await interaction.response.send_message(embed=embed)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to change this user's nickname.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
-@bot.command(name="spforce")
-@is_moderator()
-async def spforce_prefix(ctx):
-    """Display unfiltered paginated list of deleted messages (mod only)"""
-    channel = ctx.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await ctx.send("No recently deleted messages in this channel.")
-        return
+@bot.tree.command(name="message", description="Send a message to a user in any server where the bot is present")
+@app_commands.describe(user_id="The user ID to message", message="The message to send")
+async def message_slash(interaction: discord.Interaction, user_id: str, message: str):
+    try:
+        user = bot.get_user(int(user_id))
+        if not user:
+            await interaction.response.send_message("❌ User not found.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(title="📩 Anonymous Message", description=message, color=discord.Color.blue())
+        embed.set_footer(text=f"Sent from {interaction.guild.name}")
+        
+        await user.send(embed=embed)
+        await interaction.response.send_message(f"✅ Message sent to {user.display_name}!", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ Could not send message to this user (they may have DMs disabled).", ephemeral=True)
+    except ValueError:
+        await interaction.response.send_message("❌ Invalid user ID.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
-    # Reverse the messages to show newest first
-    messages = list(reversed(sniped_messages[channel.id]))
-    
-    view = SnipePaginationView(messages, channel, is_moderator=True)
-    embed = view.get_embed()
-    
-    message = await ctx.send(embed=embed, view=view)
-    view.message = message
-
-@bot.command(name="snipe")
+# ALL PREFIX COMMANDS
+@bot.command(name="snipe", aliases=["s"])
 async def snipe_prefix(ctx, page: int = 1):
     """Displays the most recently deleted message"""
     channel = ctx.channel
@@ -564,195 +592,118 @@ async def snipe_prefix(ctx, page: int = 1):
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
     embed.set_footer(text=f"SnipeBot | Page {page} of {len(sniped_messages[channel.id])} (Max: {MAX_MESSAGES})")
 
-    # Handle attachments and media links
-    media_url = get_media_url(snipe['content'], snipe['attachments'])
-    
-    if media_url:
-        embed.set_image(url=media_url)
-    elif snipe["attachments"]:
-        for attachment in snipe["attachments"]:
-            if attachment.content_type and attachment.content_type.startswith("image"):
-                embed.set_image(url=attachment.url)
-                break
-            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=attachment.url)
-                break
-
     await ctx.send(embed=embed)
 
-@bot.command(name="snipeforce")
-@is_moderator()
-async def snipeforce_prefix(ctx, page: int = 1):
-    """Display unfiltered deleted messages (mod only)"""
+@bot.command(name="sp", aliases=["snipepages"])
+async def sp_prefix(ctx):
+    """Display a paginated list of deleted messages (FILTERED)"""
     channel = ctx.channel
     if channel.id not in sniped_messages or not sniped_messages[channel.id]:
         await ctx.send("No recently deleted messages in this channel.")
         return
 
-    if page < 1 or page > len(sniped_messages[channel.id]):
-        await ctx.send(f"Page must be between 1 and {len(sniped_messages[channel.id])}.")
-        return
-
-    snipe = sniped_messages[channel.id][-page]
-    embed = discord.Embed(title="🔒 Moderator Snipe (Unfiltered)", color=discord.Color.dark_red())
+    # Reverse the messages to show newest first
+    messages = list(reversed(sniped_messages[channel.id]))
     
-    # Show unfiltered content
-    content = snipe['content'] or "*No text content*"
-    if snipe.get('has_offensive_content', False):
-        embed.description = "⚠️ **Warning:** This message contains offensive content."
+    # Use REGULAR pagination view (filtered content)
+    view = RegularSnipePaginationView(messages, channel)
+    embed = view.get_embed()
     
-    embed.add_field(name="**Content:**", value=content, inline=False)
-    embed.add_field(name="**Deleted by:**", value=snipe['author'].mention, inline=True)
-    embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot MOD | Page {page} of {len(sniped_messages[channel.id])} (Max: {MAX_MESSAGES})")
+    await ctx.send(embed=embed, view=view)
 
-    # Handle attachments and media links
-    media_url = get_media_url(snipe['content'], snipe['attachments'])
-    
-    if media_url:
-        embed.set_image(url=media_url)
-    elif snipe["attachments"]:
-        for attachment in snipe["attachments"]:
-            if attachment.content_type and attachment.content_type.startswith("image"):
-                embed.set_image(url=attachment.url)
-                break
-            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=attachment.url)
-                break
-
-    await ctx.send(embed=embed)
-
-@bot.tree.command(name="editsnipe", description="Displays the most recently edited message")
-@app_commands.describe(page="Page number (1-100)")
-async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
-    channel = interaction.channel
-    if channel.id not in edited_messages or not edited_messages[channel.id]:
-        await interaction.response.send_message("No recently edited messages in this channel.", ephemeral=True)
-        return
-
-    if page < 1 or page > len(edited_messages[channel.id]):
-        await interaction.response.send_message(f"Page must be between 1 and {len(edited_messages[channel.id])}.", ephemeral=True)
-        return
-
-    edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="✏️ Edited Message", color=discord.Color.blue())
-    
-    # Filter content if it contains offensive words
-    before_content = edit['before_content'] or "*No text content*"
-    after_content = edit['after_content'] or "*No text content*"
-    
-    if edit.get('before_has_offensive_content', False):
-        before_content = filter_content(before_content)
-    if edit.get('after_has_offensive_content', False):
-        after_content = filter_content(after_content)
-    
-    embed.add_field(name="**Before:**", value=before_content, inline=False)
-    embed.add_field(name="**After:**", value=after_content, inline=False)
-    embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
-    embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot | Page {page} of {len(edited_messages[channel.id])} (Max: {MAX_MESSAGES})")
-
-    # Handle attachments
-    if edit["attachments"]:
-        for attachment in edit["attachments"]:
-            if attachment.content_type and attachment.content_type.startswith("image"):
-                embed.set_image(url=attachment.url)
-                break
-            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=attachment.url)
-                break
-
-    await interaction.response.send_message(embed=embed)
-
-@bot.command(name="editsnipe")
-async def editsnipe_prefix(ctx, page: int = 1):
-    """Displays the most recently edited message"""
+@bot.command(name="spforce")
+@is_moderator()
+async def spforce_prefix(ctx):
+    """Display unfiltered paginated list of deleted messages (UNFILTERED - mod only)"""
     channel = ctx.channel
-    if channel.id not in edited_messages or not edited_messages[channel.id]:
-        await ctx.send("No recently edited messages in this channel.")
+    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
+        await ctx.send("No recently deleted messages in this channel.")
         return
 
-    if page < 1 or page > len(edited_messages[channel.id]):
-        await ctx.send(f"Page must be between 1 and {len(edited_messages[channel.id])}.")
-        return
-
-    edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="✏️ Edited Message", color=discord.Color.blue())
+    # Reverse the messages to show newest first
+    messages = list(reversed(sniped_messages[channel.id]))
     
-    # Filter content if it contains offensive words
-    before_content = edit['before_content'] or "*No text content*"
-    after_content = edit['after_content'] or "*No text content*"
+    # Use MODERATOR pagination view (unfiltered content)
+    view = ModeratorSnipePaginationView(messages, channel)
+    embed = view.get_embed()
     
-    if edit.get('before_has_offensive_content', False):
-        before_content = filter_content(before_content)
-    if edit.get('after_has_offensive_content', False):
-        after_content = filter_content(after_content)
-    
-    embed.add_field(name="**Before:**", value=before_content, inline=False)
-    embed.add_field(name="**After:**", value=after_content, inline=False)
-    embed.add_field(name="**Edited by:**", value=edit['author'].mention, inline=True)
-    embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"SnipeBot | Page {page} of {len(edited_messages[channel.id])} (Max: {MAX_MESSAGES})")
+    await ctx.send(embed=embed, view=view)
 
-    # Handle attachments
-    if edit["attachments"]:
-        for attachment in edit["attachments"]:
-            if attachment.content_type and attachment.content_type.startswith("image"):
-                embed.set_image(url=attachment.url)
-                break
-            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=attachment.url)
-                break
-
-    await ctx.send(embed=embed)
-
-@bot.tree.command(name="clear", description="Clear all sniped messages (admin only)")
-@check_admin_or_permissions(manage_messages=True)
-async def clear_slash(interaction: discord.Interaction):
-    channel = interaction.channel
-    if channel.id in sniped_messages:
-        del sniped_messages[channel.id]
-    if channel.id in edited_messages:
-        del edited_messages[channel.id]
-    
-    await interaction.response.send_message("✅ All sniped and edited messages have been cleared for this channel.")
-
-@bot.command(name="clear")
+@bot.command(name="re", aliases=["rename"])
 @has_permission_or_is_admin()
-async def clear_prefix(ctx):
-    """Clear all sniped messages (admin only)"""
-    channel = ctx.channel
-    if channel.id in sniped_messages:
-        del sniped_messages[channel.id]
-    if channel.id in edited_messages:
-        del edited_messages[channel.id]
-    
-    await ctx.send("✅ All sniped and edited messages have been cleared for this channel.")
+async def rename_prefix(ctx, member: discord.Member, *, new_nickname):
+    """Change someone's nickname (admin only)"""
+    try:
+        old_nick = member.display_name
+        await member.edit(nick=new_nickname)
+        embed = discord.Embed(title="✅ Nickname Changed", color=discord.Color.green())
+        embed.add_field(name="Member", value=member.mention, inline=True)
+        embed.add_field(name="Old Nickname", value=old_nick, inline=True)
+        embed.add_field(name="New Nickname", value=new_nickname, inline=True)
+        await ctx.send(embed=embed)
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to change this user's nickname.")
+    except Exception as e:
+        await ctx.send(f"❌ An error occurred: {str(e)}")
 
-@bot.tree.command(name="help", description="Show help information")
+@bot.command(name="mess", aliases=["message"])
+async def message_prefix(ctx, user_id: int, *, message):
+    """Send a message to a user in any server where the bot is present"""
+    try:
+        user = bot.get_user(user_id)
+        if not user:
+            await ctx.send("❌ User not found.")
+            return
+        
+        embed = discord.Embed(title="📩 Anonymous Message", description=message, color=discord.Color.blue())
+        embed.set_footer(text=f"Sent from {ctx.guild.name}")
+        
+        await user.send(embed=embed)
+        await ctx.send(f"✅ Message sent to {user.display_name}!")
+    except discord.Forbidden:
+        await ctx.send("❌ Could not send message to this user (they may have DMs disabled).")
+    except Exception as e:
+        await ctx.send(f"❌ An error occurred: {str(e)}")
+
+@bot.command(name="say")
+async def say_prefix(ctx, *, message):
+    """Make the bot say something"""
+    await ctx.message.delete()  # Delete the original command message
+    await ctx.send(message)
+
+@bot.command(name="ping")
+async def ping_prefix(ctx):
+    """Check the bot's latency"""
+    await ctx.send(f"🏓 Pong! Latency: {round(bot.latency * 1000)}ms")
+
+@bot.tree.command(name="ping", description="Check the bot's latency")
+async def ping_slash(interaction: discord.Interaction):
+    await interaction.response.send_message(f"🏓 Pong! Latency: {round(bot.latency * 1000)}ms")
+
+@bot.tree.command(name="help", description="Show help message with all commands")
 async def help_slash(interaction: discord.Interaction):
     embed = discord.Embed(
-        title="🔍 SnipeBot Help",
-        description="A Discord bot for viewing deleted and edited messages.",
+        title="🛠️ SnipeBot Commands", 
+        description="Here are all available commands:",
         color=discord.Color.blue()
     )
     
     embed.add_field(
         name="📜 **Snipe Commands**",
         value=(
-            "`/snipe [page]` - Show most recent deleted message\n"
-            "`/sp` or `/snipepages` - Show paginated list of deleted messages\n"
-            "`/editsnipe [page]` - Show most recent edited message"
+            "`/snipe` or `,snipe` (`,s`) - Show most recent deleted message\n"
+            "`/sp` or `,sp` - Show filtered paginated list of deleted messages\n"
+            "`/spforce` or `,spforce` - Show unfiltered paginated list (mod only)"
         ),
         inline=False
     )
     
     embed.add_field(
-        name="🔒 **Moderator Commands**",
+        name="👤 **User Commands**",
         value=(
-            "`/snipeforce [page]` - Show unfiltered deleted message\n"
-            "`/spforce` - Show unfiltered paginated list\n"
-            "`/clear` - Clear all sniped messages"
+            "`/rename` or `,re` - Change user's nickname (admin only)\n"
+            "`/message` or `,mess` - Send anonymous message to any user\n"
+            "`/say` or `,say` - Make the bot say something"
         ),
         inline=False
     )
@@ -760,15 +711,9 @@ async def help_slash(interaction: discord.Interaction):
     embed.add_field(
         name="🛠️ **Utility Commands**",
         value=(
-            "`/ping` - Check bot latency\n"
-            "`/help` - Show this help message"
+            "`/ping` or `,ping` - Check bot latency\n"
+            "`/help` or `,help` - Show this help message"
         ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="📝 **Prefix Commands**",
-        value="All commands also work with `,` prefix (e.g., `,snipe`, `,sp`, `,help`)",
         inline=False
     )
     
@@ -778,29 +723,29 @@ async def help_slash(interaction: discord.Interaction):
 
 @bot.command(name="help")
 async def help_prefix(ctx):
-    """Show help information"""
+    """Show help message with all commands"""
     embed = discord.Embed(
-        title="🔍 SnipeBot Help",
-        description="A Discord bot for viewing deleted and edited messages.",
+        title="🛠️ SnipeBot Commands", 
+        description="Here are all available commands:",
         color=discord.Color.blue()
     )
     
     embed.add_field(
         name="📜 **Snipe Commands**",
         value=(
-            "`,snipe [page]` - Show most recent deleted message\n"
-            "`,sp` or `,snipepages` - Show paginated list of deleted messages\n"
-            "`,editsnipe [page]` - Show most recent edited message"
+            "`,snipe` (`,s`) - Show most recent deleted message\n"
+            "`,sp` - Show filtered paginated list of deleted messages\n"
+            "`,spforce` - Show unfiltered paginated list (mod only)"
         ),
         inline=False
     )
     
     embed.add_field(
-        name="🔒 **Moderator Commands**",
+        name="👤 **User Commands**",
         value=(
-            "`,snipeforce [page]` - Show unfiltered deleted message\n"
-            "`,spforce` - Show unfiltered paginated list\n"
-            "`,clear` - Clear all sniped messages"
+            "`,re` - Change user's nickname (admin only)\n"
+            "`,mess` - Send anonymous message to any user\n"
+            "`,say` - Make the bot say something"
         ),
         inline=False
     )
@@ -809,7 +754,6 @@ async def help_prefix(ctx):
         name="🛠️ **Utility Commands**",
         value=(
             "`,ping` - Check bot latency\n"
-            "`,clear` - Clear all sniped messages (admin only)\n"
             "`,help` - Show this help message"
         ),
         inline=False
@@ -825,23 +769,18 @@ async def help_prefix(ctx):
     
     await ctx.send(embed=embed)
 
-# Error handling for permission errors
+# Error handling
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
         await ctx.send("❌ You don't have permission to use this command.")
     elif isinstance(error, commands.CommandNotFound):
         pass  # Ignore command not found errors
-    else:
-        print(f"Command error: {error}")
 
-# Error handling for slash command permission errors
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CheckFailure):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
-    else:
-        print(f"Slash command error: {error}")
 
 if __name__ == "__main__":
     # Start Flask server in background
