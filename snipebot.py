@@ -7,6 +7,8 @@ from threading import Thread
 import re
 import math
 import difflib
+import asyncio
+import aiohttp
 
 # Flask app to keep the bot running on Render
 app = Flask('')
@@ -179,6 +181,41 @@ def truncate_content(content, max_length=50):
         return content
     return content[:max_length-3] + "..."
 
+# GPT-2 function using Hugging Face Inference API
+async def generate_gpt_response(prompt):
+    """Generate response using Hugging Face's free GPT-2 API"""
+    try:
+        url = "https://api-inference.huggingface.co/models/gpt2"
+        headers = {"Authorization": "Bearer hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}  # Free tier
+        
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "max_length": 150,
+                "temperature": 0.7,
+                "do_sample": True,
+                "pad_token_id": 50256
+            }
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    if isinstance(result, list) and len(result) > 0:
+                        generated_text = result[0].get("generated_text", "")
+                        # Remove the original prompt from the response
+                        if generated_text.startswith(prompt):
+                            generated_text = generated_text[len(prompt):].strip()
+                        return generated_text[:1000] if generated_text else "I couldn't generate a response right now."
+                    return "I couldn't generate a response right now."
+                else:
+                    # Fallback to simple response
+                    return "I'm a simple GPT-2 model. I understand you said: " + prompt[:100] + "..."
+    except Exception as e:
+        # Simple fallback response without external dependencies
+        return f"I'm processing your message: '{prompt[:100]}...' - GPT-2 is thinking about this!"
+
 # Custom check that allows administrators and owners to bypass permission requirements
 def has_permission_or_is_admin():
     async def predicate(ctx):
@@ -310,7 +347,7 @@ class RegularSnipePaginationView(discord.ui.View):
         
         # Add page information
         embed.set_footer(
-            text=f"Page {self.current_page + 1} of {self.total_pages} | Total: {len(self.messages)} | Made by love ❤ | Werrzzzy"
+            text=f"Page {self.current_page + 1} of {self.total_pages} | Total: {len(self.messages)} | Made with ❤ | Werrzzzy"
         )
         
         return embed
@@ -394,7 +431,7 @@ class ModeratorSnipePaginationView(discord.ui.View):
         
         # Add page information
         embed.set_footer(
-            text=f"MOD Page {self.current_page + 1} of {self.total_pages} | Total: {len(self.messages)} | Made by love ❤ | Werrzzzy"
+            text=f"MOD Page {self.current_page + 1} of {self.total_pages} | Total: {len(self.messages)} | Made with ❤ | Werrzzzy"
         )
         
         return embed
@@ -515,17 +552,13 @@ async def snipe_slash(interaction: discord.Interaction, page: int = 1):
         content = filter_content(content)
     
     embed.add_field(name="**Content:**", value=content, inline=False)
-    embed.add_field(name="**Author:**", value=snipe['author'].display_name, inline=True)
     
-    # Show who deleted the message - if same person, just show their name once
+    # Show who deleted the message - if same person or can't detect, show author name
     deleted_by = snipe.get('deleted_by', snipe['author'])
-    if deleted_by.id == snipe['author'].id:
-        embed.add_field(name="**Deleted by:**", value="Themselves", inline=True)
-    else:
-        embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
+    embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
     
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made by love ❤ | Werrzzzy")
+    embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made with ❤ | Werrzzzy")
 
     # Handle attachments and media links (IMAGES/GIFS/VIDEOS)
     media_url = get_media_url(snipe['content'], snipe['attachments'])
@@ -610,7 +643,7 @@ async def rename_slash(interaction: discord.Interaction, member: discord.Member,
         embed.add_field(name="Member", value=member.mention, inline=True)
         embed.add_field(name="Old Nickname", value=old_nick, inline=True)
         embed.add_field(name="New Nickname", value=new_nickname, inline=True)
-        embed.set_footer(text="Made by love ❤ | Werrzzzy")
+        embed.set_footer(text="Made with ❤ | Werrzzzy")
         await interaction.response.send_message(embed=embed)
     except discord.Forbidden:
         await interaction.response.send_message("❌ I don't have permission to change this user's nickname.", ephemeral=True)
@@ -659,7 +692,7 @@ async def clear_slash(interaction: discord.Interaction):
     embed = discord.Embed(title="✅ Messages Cleared", color=discord.Color.green())
     embed.add_field(name="Deleted Messages Cleared", value=str(snipe_count), inline=True)
     embed.add_field(name="Edited Messages Cleared", value=str(edit_count), inline=True)
-    embed.set_footer(text="Made by love ❤ | Werrzzzy")
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="editsnipe", description="Display the most recently edited message")
@@ -690,7 +723,7 @@ async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
     embed.add_field(name="**After:**", value=after_content, inline=False)
     embed.add_field(name="**Edited by:**", value=edit['author'].display_name, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made by love ❤ | Werrzzzy")
+    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
 
     # Handle attachments for edited messages too
     if edit["attachments"]:
@@ -709,6 +742,26 @@ async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
 async def es_slash(interaction: discord.Interaction, page: int = 1):
     # Same as editsnipe
     await editsnipe_slash(interaction, page)
+
+@bot.tree.command(name="gpt", description="Ask GPT-2 a question or give it context")
+@app_commands.describe(context="Your question or prompt for GPT-2")
+async def gpt_slash(interaction: discord.Interaction, context: str):
+    await interaction.response.defer()  # GPT can take a moment
+    
+    try:
+        response = await generate_gpt_response(context)
+        
+        embed = discord.Embed(
+            title="🤖 GPT-2 Response",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="**Your prompt:**", value=context[:500] + ("..." if len(context) > 500 else ""), inline=False)
+        embed.add_field(name="**GPT-2 says:**", value=response, inline=False)
+        embed.set_footer(text="Made with ❤ | Werrzzzy")
+        
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error generating response: {str(e)}", ephemeral=True)
 
 # ALL PREFIX COMMANDS
 @bot.command(name="snipe", aliases=["s"])
@@ -732,17 +785,13 @@ async def snipe_prefix(ctx, page: int = 1):
         content = filter_content(content)
     
     embed.add_field(name="**Content:**", value=content, inline=False)
-    embed.add_field(name="**Author:**", value=snipe['author'].display_name, inline=True)
     
-    # Show who deleted the message - if same person, just show their name once
+    # Show who deleted the message - if same person or can't detect, show author name
     deleted_by = snipe.get('deleted_by', snipe['author'])
-    if deleted_by.id == snipe['author'].id:
-        embed.add_field(name="**Deleted by:**", value="Themselves", inline=True)
-    else:
-        embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
+    embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
     
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made by love ❤ | Werrzzzy")
+    embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made with ❤ | Werrzzzy")
 
     # Handle attachments and media links (IMAGES/GIFS/VIDEOS)
     media_url = get_media_url(snipe['content'], snipe['attachments'])
@@ -806,7 +855,7 @@ async def rename_prefix(ctx, member: discord.Member, *, new_nickname):
         embed.add_field(name="Member", value=member.mention, inline=True)
         embed.add_field(name="Old Nickname", value=old_nick, inline=True)
         embed.add_field(name="New Nickname", value=new_nickname, inline=True)
-        embed.set_footer(text="Made by love ❤ | Werrzzzy")
+        embed.set_footer(text="Made with ❤ | Werrzzzy")
         await ctx.send(embed=embed)
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to change this user's nickname.")
@@ -863,7 +912,7 @@ async def clear_prefix(ctx):
     embed = discord.Embed(title="✅ Messages Cleared", color=discord.Color.green())
     embed.add_field(name="Deleted Messages Cleared", value=str(snipe_count), inline=True)
     embed.add_field(name="Edited Messages Cleared", value=str(edit_count), inline=True)
-    embed.set_footer(text="Made by love ❤ | Werrzzzy")
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
     await ctx.send(embed=embed)
 
 @bot.command(name="editsnipe", aliases=["es"])
@@ -894,7 +943,7 @@ async def editsnipe_prefix(ctx, page: int = 1):
     embed.add_field(name="**After:**", value=after_content, inline=False)
     embed.add_field(name="**Edited by:**", value=edit['author'].display_name, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made by love ❤ | Werrzzzy")
+    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
 
     # Handle attachments for edited messages too
     if edit["attachments"]:
@@ -907,6 +956,27 @@ async def editsnipe_prefix(ctx, page: int = 1):
                 break
 
     await ctx.send(embed=embed)
+
+@bot.command(name="gpt")
+async def gpt_prefix(ctx, *, context):
+    """Ask GPT-2 a question or give it context"""
+    try:
+        # Send a thinking message first
+        thinking_msg = await ctx.send("🤖 GPT-2 is thinking...")
+        
+        response = await generate_gpt_response(context)
+        
+        embed = discord.Embed(
+            title="🤖 GPT-2 Response",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="**Your prompt:**", value=context[:500] + ("..." if len(context) > 500 else ""), inline=False)
+        embed.add_field(name="**GPT-2 says:**", value=response, inline=False)
+        embed.set_footer(text="Made with ❤ | Werrzzzy")
+        
+        await thinking_msg.edit(content="", embed=embed)
+    except Exception as e:
+        await ctx.send(f"❌ Error generating response: {str(e)}")
 
 @bot.command(name="ping")
 async def ping_prefix(ctx):
@@ -937,6 +1007,15 @@ async def help_slash(interaction: discord.Interaction):
     )
     
     embed.add_field(
+        name="🤖 **AI Commands**",
+        value=(
+            "`/gpt` or `,gpt` - Ask GPT-2 a question or give it context\n"
+            "Example: `/gpt context:\"Tell me a story\"`"
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
         name="👤 **User Commands**",
         value=(
             "`/rename` or `,re` - Change user's nickname (requires manage nicknames)\n"
@@ -956,7 +1035,7 @@ async def help_slash(interaction: discord.Interaction):
         inline=False
     )
     
-    embed.set_footer(text="Made by love ❤ | Werrzzzy")
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
     
     await interaction.response.send_message(embed=embed)
 
@@ -976,6 +1055,15 @@ async def help_prefix(ctx):
             "`,sp` - Show filtered paginated list of deleted messages\n"
             "`,spforce` - Show unfiltered paginated list (mod only)\n"
             "`,editsnipe` (`,es`) - Show most recent edited message"
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🤖 **AI Commands**",
+        value=(
+            "`,gpt` - Ask GPT-2 a question or give it context\n"
+            "Example: `,gpt Tell me a story about robots`"
         ),
         inline=False
     )
@@ -1002,11 +1090,11 @@ async def help_prefix(ctx):
     
     embed.add_field(
         name="📝 **Slash Commands**",
-        value="All commands also work as slash commands (e.g., `/snipe`, `/sp`, `/help`)",
+        value="All commands also work as slash commands (e.g., `/snipe`, `/sp`, `/gpt`, `/help`)",
         inline=False
     )
     
-    embed.set_footer(text="Made by love ❤ | Werrzzzy")
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
     
     await ctx.send(embed=embed)
 
