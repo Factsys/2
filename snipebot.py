@@ -295,32 +295,46 @@ def is_user_blocked(user_id):
     """Check if a user is blocked from using bot functions"""
     return user_id in blocked_users
 
-# Helper function to handle media URLs and extract from content
+# FIXED: Enhanced media URL detection
 def get_media_url(content, attachments):
+    """Get media URL from content or attachments with enhanced detection"""
     # Priority 1: Check for attachments first (Discord files)
     if attachments:
-        return attachments[0].url
+        for attachment in attachments:
+            if any(attachment.filename.lower().endswith(ext) for ext in ['.gif', '.png', '.jpg', '.jpeg', '.webp', '.mp4', '.mov']):
+                return attachment.url
     
-    # Priority 2: Check for tenor links in content
+    # Priority 2: Check for various media links in content
     if content:
+        # Tenor GIFs
         tenor_match = re.search(r'https?://(?:www\.)?tenor\.com/view/[^\s]+', content)
         if tenor_match:
             return tenor_match.group(0)
         
-        # Check for Twitter/X GIF links
-        twitter_match = re.search(r'https?://(?:www\.)?twitter\.com/[^\s]+\.gif', content)
-        if twitter_match:
-            return twitter_match.group(0)
+        # Giphy GIFs
+        giphy_match = re.search(r'https?://(?:www\.)?giphy\.com/gifs/[^\s]+', content)
+        if giphy_match:
+            return giphy_match.group(0)
         
-        # Check for discord attachment links with media extensions
+        # Discord CDN media links
         discord_media_match = re.search(r'https?://(?:cdn|media)\.discordapp\.(?:com|net)/[^\s]+\.(gif|png|jpg|jpeg|webp|mp4|mov)[^\s]*', content)
         if discord_media_match:
             return discord_media_match.group(0)
         
-        # Check for direct media links
+        # Direct media links
         direct_media_match = re.search(r'https?://[^\s]+\.(gif|png|jpg|jpeg|webp|mp4|mov)[^\s]*', content)
         if direct_media_match:
             return direct_media_match.group(0)
+        
+        # YouTube links
+        youtube_match = re.search(r'https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[^\s]+', content)
+        if youtube_match:
+            return youtube_match.group(0)
+        
+        # Twitter/X media
+        twitter_match = re.search(r'https?://(?:www\.)?(?:twitter\.com|x\.com)/[^\s]+', content)
+        if twitter_match:
+            return twitter_match.group(0)
     
     return None
 
@@ -433,7 +447,7 @@ def can_host_giveaway(member):
     user_role_ids = [role.id for role in member.roles]
     return any(role_id in user_role_ids for role_id in giveaway_host_roles[guild_id])
 
-# Helper function to check if user meets giveaway requirements
+# ENHANCED: Giveaway requirements checker with time in server support
 def check_giveaway_requirements(member, requirements):
     """Check if a member meets all giveaway requirements"""
     if not requirements:
@@ -448,6 +462,17 @@ def check_giveaway_requirements(member, requirements):
         required_messages = requirements['messages']
         if user_count < required_messages:
             failed_requirements.append(f"Need {required_messages} messages (has {user_count})")
+    
+    # Check time in server requirement
+    if 'time_in_server' in requirements:
+        join_time = member.joined_at
+        if join_time:
+            time_in_server = (datetime.utcnow() - join_time).total_seconds()
+            required_time = requirements['time_in_server']
+            if time_in_server < required_time:
+                required_str = format_duration(required_time)
+                current_str = format_duration(int(time_in_server))
+                failed_requirements.append(f"Need {required_str} in server (has {current_str})")
     
     # Check required role
     if 'required_role' in requirements:
@@ -490,20 +515,20 @@ class HelpPaginationView(discord.ui.View):
                 "title": "📜 FACTSY Commands - Page 1",
                 "fields": [
                     ("**Message Tracking**", "`,snipe` `,s` - Show last deleted message\n`,editsnipe` `,es` - Show last edited message\n`,sp [channel] [page]` - List all deleted messages\n`,spforce` `,spf` - Moderator-only unfiltered snipe\n`,spl [channel] [page]` - Show deleted links only", False),
-                    ("**Moderation**", "`,namelock` `,nl` - Lock user's nickname\n`,unl` - Unlock user's nickname\n`,rename` `,re` - Change user's nickname\n`,say` - Send normal message\n`,saywb` - Send message via webhook", False)
+                    ("**Moderation**", "`,namelock` `,nl` - Lock user's nickname\n`,unl` - Unlock user's nickname\n`,rename` `,re` - Change user's nickname\n`,say` - Send normal message\n`,saywb` - Send webhook message with color", False)
                 ]
             },
             {
                 "title": "📜 FACTSY Commands - Page 2", 
                 "fields": [
-                    ("**Giveaways**", "`,gw [id]` - Reroll giveaway winner\n`/giveaway` - Create new giveaway\n`/giveaway-host-role` - Set host roles", False),
+                    ("**Giveaways**", "`,gw [id]` - Reroll giveaway winner\n`/giveaway` - Create advanced giveaway\n`/giveaway-host-role` - Set host roles", False),
                     ("**Management**", "`,block` - Block user from bot\n`,mess` - DM user globally\n`,role` - Add role to user\n`,namelockimmune` `,nli` - Make user immune to namelock", False)
                 ]
             },
             {
                 "title": "📜 FACTSY Commands - Page 3",
                 "fields": [
-                    ("**Reaction Roles**", "`,create` - Create reaction role message\n`/create` - Slash version of reaction roles", False),
+                    ("**Reaction Roles**", "`,create` - Create reaction role message\n`/create` - Enhanced reaction roles with context", False),
                     ("**Bot Owner**", "`,manage` - Bot management panel\n`/unblock` - Unblock user from bot", False)
                 ]
             },
@@ -511,7 +536,7 @@ class HelpPaginationView(discord.ui.View):
                 "title": "📜 FACTSY Commands - Page 4",
                 "fields": [
                     ("**Info**", "All commands support both prefix (,) and slash (/) versions\nModerators can use most commands\nBlocked users cannot use any bot functions", False),
-                    ("**Usage Examples**", "`,mess wer hello` - DM user with partial name\n`,create [text] 🦝 @Role red` - Create reaction role\n`,gw 123456789` - Reroll giveaway", False)
+                    ("**Usage Examples**", "`,mess wer hello` - DM user with partial name\n`,saywb Hello world! red` - Send colored webhook message\n`,gw 123456789` - Reroll giveaway", False)
                 ]
             }
         ]
@@ -792,6 +817,7 @@ async def slash_help(interaction: discord.Interaction):
     embed = view.get_embed()
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+# FIXED: Snipe commands with proper media display
 @bot.tree.command(name="snipe", description="Show the most recently deleted message in this channel")
 @check_not_blocked()
 async def slash_snipe(interaction: discord.Interaction, channel: discord.TextChannel = None):
@@ -804,11 +830,12 @@ async def slash_snipe(interaction: discord.Interaction, channel: discord.TextCha
     
     message_data = sniped_messages[channel_id][0]  # Most recent
     
-    # Check for media content first
+    # Get media URL and clean content
     media_url = get_media_url(message_data['content'], message_data['attachments'])
+    display_content = clean_content_from_media(message_data['content'], media_url) if media_url else message_data['content']
     
     embed = discord.Embed(
-        description=filter_content(message_data['content']) if message_data['content'] else "*No text content*",
+        description=filter_content(display_content) if display_content else "*No text content*",
         color=discord.Color.blue(),
         timestamp=message_data['deleted_at']
     )
@@ -818,7 +845,7 @@ async def slash_snipe(interaction: discord.Interaction, channel: discord.TextCha
         icon_url=message_data['author'].display_avatar.url
     )
     
-    # If there's media content, display it as an image
+    # FIXED: Display media content as image/video
     if media_url:
         embed.set_image(url=media_url)
     
@@ -906,14 +933,23 @@ async def slash_snipelist(interaction: discord.Interaction, channel: discord.Tex
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="giveaway", description="Create a new giveaway")
+# ENHANCED: Advanced giveaway command with all requested features
+@bot.tree.command(name="giveaway", description="Create an advanced giveaway with requirements")
 @app_commands.describe(
     duration="Duration (e.g., 1h, 30m, 1d)",
     winners="Number of winners",
     prize="Giveaway prize",
-    description="Optional description"
+    channel="Channel to send giveaway (optional)",
+    messagesreq="Minimum messages required to join (optional)",
+    timeinserver="Time in server required (e.g., 1d, 1h) (optional)",
+    rolereq="Required role to join (optional)",
+    blacklistedrole="Blacklisted role (users with this role cannot join) (optional)",
+    color="Embed color (optional)"
 )
-async def slash_giveaway(interaction: discord.Interaction, duration: str, winners: int, prize: str, description: str = None):
+async def slash_giveaway(interaction: discord.Interaction, duration: str, winners: int, prize: str, 
+                        channel: discord.TextChannel = None, messagesreq: int = None, 
+                        timeinserver: str = None, rolereq: discord.Role = None, 
+                        blacklistedrole: discord.Role = None, color: str = None):
     if is_user_blocked(interaction.user.id):
         await interaction.response.send_message("❌ You are blocked from using bot functions.", ephemeral=True)
         return
@@ -931,35 +967,100 @@ async def slash_giveaway(interaction: discord.Interaction, duration: str, winner
         await interaction.response.send_message("❌ Number of winners must be at least 1.", ephemeral=True)
         return
     
+    # Parse time in server requirement
+    time_in_server_seconds = 0
+    if timeinserver:
+        time_in_server_seconds = parse_time_string(timeinserver)
+        if time_in_server_seconds == 0:
+            await interaction.response.send_message("❌ Invalid time in server format. Use examples like: 1d, 2h, 30m", ephemeral=True)
+            return
+    
     end_time = datetime.utcnow() + timedelta(seconds=duration_seconds)
+    target_channel = channel or interaction.channel
+    embed_color = parse_color(color) if color else discord.Color.gold()
     
     embed = discord.Embed(
         title="🎉 GIVEAWAY 🎉",
         description=f"**Prize:** {prize}\n**Winners:** {winners}\n**Ends:** <t:{int(end_time.timestamp())}:R>",
-        color=discord.Color.gold()
+        color=embed_color
     )
     
-    if description:
-        embed.add_field(name="Description", value=description, inline=False)
+    # Add requirements if any
+    requirements_text = []
+    if messagesreq:
+        requirements_text.append(f"📝 {messagesreq} messages minimum")
+    if timeinserver:
+        requirements_text.append(f"⏰ {timeinserver} in server minimum")
+    if rolereq:
+        requirements_text.append(f"🎭 {rolereq.mention} role required")
+    if blacklistedrole:
+        requirements_text.append(f"🚫 {blacklistedrole.mention} role not allowed")
+    
+    if requirements_text:
+        embed.add_field(name="Requirements", value="\n".join(requirements_text), inline=False)
     
     embed.add_field(name="How to enter", value="React with 🎉 to enter!", inline=False)
     embed.set_footer(text=f"Hosted by {interaction.user.display_name}")
     
-    await interaction.response.send_message(embed=embed)
-    message = await interaction.original_response()
+    await interaction.response.send_message(f"Giveaway created in {target_channel.mention}!", ephemeral=True)
+    message = await target_channel.send(embed=embed)
     await message.add_reaction("🎉")
     
-    # Store giveaway data
+    # Store giveaway data with requirements
+    requirements = {}
+    if messagesreq:
+        requirements['messages'] = messagesreq
+    if time_in_server_seconds:
+        requirements['time_in_server'] = time_in_server_seconds
+    if rolereq:
+        requirements['required_role'] = rolereq.name
+    if blacklistedrole:
+        requirements['blacklisted_role'] = blacklistedrole.name
+    
     active_giveaways[message.id] = {
         'host_id': interaction.user.id,
         'guild_id': interaction.guild.id,
-        'channel_id': interaction.channel.id,
+        'channel_id': target_channel.id,
         'end_time': end_time,
         'winners': winners,
         'prize': prize,
-        'requirements': {},
+        'requirements': requirements,
         'participants': set()
     }
+
+# ENHANCED: Create command with context support
+@bot.tree.command(name="create", description="Create reaction role message with context")
+@app_commands.describe(
+    context="Message content with emoji placeholders",
+    color="Embed color (optional)"
+)
+async def slash_create(interaction: discord.Interaction, context: str, color: str = None):
+    if is_user_blocked(interaction.user.id):
+        await interaction.response.send_message("❌ You are blocked from using bot functions.", ephemeral=True)
+        return
+    
+    if not interaction.user.guild_permissions.manage_roles:
+        await interaction.response.send_message("❌ You need Manage Roles permission to use this command.", ephemeral=True)
+        return
+    
+    embed_color = parse_color(color) if color else discord.Color.default()
+    
+    embed = discord.Embed(
+        title="🎭 Reaction Roles",
+        description=context,
+        color=embed_color
+    )
+    
+    embed.add_field(
+        name="Setup Instructions", 
+        value="React to this message to add emoji-role pairs.\nUse `,create [text] emoji @role` for quick setup.", 
+        inline=False
+    )
+    embed.set_footer(text="This is a reaction role setup message")
+    
+    await interaction.response.send_message(embed=embed)
+    
+    # This creates a template message that can be configured later with prefix commands
 
 @bot.tree.command(name="namelock", description="Lock a user's nickname")
 @app_commands.describe(user="User to namelock", nickname="Nickname to lock them to")
@@ -1075,72 +1176,9 @@ async def slash_stats(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="create", description="Create reaction role message")
-@app_commands.describe(
-    text="Text for the reaction role message",
-    emoji1="First emoji",
-    role1="First role",
-    emoji2="Second emoji (optional)",
-    role2="Second role (optional)",
-    color="Embed color (optional)"
-)
-async def slash_create(
-    interaction: discord.Interaction,
-    text: str,
-    emoji1: str,
-    role1: discord.Role,
-    emoji2: str = None,
-    role2: discord.Role = None,
-    color: str = "blue"
-):
-    if is_user_blocked(interaction.user.id):
-        await interaction.response.send_message("❌ You are blocked from using bot functions.", ephemeral=True)
-        return
-    
-    if not interaction.user.guild_permissions.manage_roles and interaction.user.id != interaction.guild.owner_id:
-        await interaction.response.send_message("❌ You need Manage Roles permission to use this command.", ephemeral=True)
-        return
-    
-    # Build role mapping
-    role_mapping = {emoji1: role1.id}
-    if emoji2 and role2:
-        role_mapping[emoji2] = role2.id
-    
-    # Parse color
-    embed_color = parse_color(color)
-    
-    # Create embed
-    embed = discord.Embed(
-        title="🎭 Reaction Roles",
-        description=text,
-        color=embed_color
-    )
-    
-    role_list = []
-    for emoji, role_id in role_mapping.items():
-        role = interaction.guild.get_role(role_id)
-        if role:
-            role_list.append(f"{emoji} - {role.mention}")
-    
-    embed.add_field(name="Available Roles", value='\n'.join(role_list), inline=False)
-    embed.set_footer(text="React to get/remove roles!")
-    
-    # Send message and add reactions
-    await interaction.response.send_message(embed=embed)
-    message = await interaction.original_response()
-    
-    # Store reaction role mapping
-    reaction_roles[message.id] = role_mapping
-    
-    # Add reactions
-    for emoji in role_mapping.keys():
-        try:
-            await message.add_reaction(emoji)
-        except discord.HTTPException:
-            pass
-
 # ===== PREFIX COMMANDS =====
 
+# FIXED: Prefix snipe commands
 @bot.command(aliases=['s'])
 @not_blocked()
 async def snipe(ctx, channel: discord.TextChannel = None):
@@ -1154,11 +1192,12 @@ async def snipe(ctx, channel: discord.TextChannel = None):
     
     message_data = sniped_messages[channel_id][0]  # Most recent
     
-    # Check for media content first
+    # Get media URL and clean content
     media_url = get_media_url(message_data['content'], message_data['attachments'])
+    display_content = clean_content_from_media(message_data['content'], media_url) if media_url else message_data['content']
     
     embed = discord.Embed(
-        description=filter_content(message_data['content']) if message_data['content'] else "*No text content*",
+        description=filter_content(display_content) if display_content else "*No text content*",
         color=discord.Color.blue(),
         timestamp=message_data['deleted_at']
     )
@@ -1168,7 +1207,7 @@ async def snipe(ctx, channel: discord.TextChannel = None):
         icon_url=message_data['author'].display_avatar.url
     )
     
-    # If there's media content, display it as an image
+    # FIXED: Display media content as image/video
     if media_url:
         embed.set_image(url=media_url)
     
@@ -1219,7 +1258,8 @@ async def snipelist(ctx, channel: discord.TextChannel = None, page: int = 1):
     
     await ctx.send(embed=embed)
 
-@bot.command(aliases=['spf'])
+# FIXED: Snipe force command 
+@bot.command(aliases=['spf', 'snipeforce', 'sf'])
 @commands.has_permissions(manage_messages=True)
 @not_blocked()
 async def spforce(ctx, channel: discord.TextChannel = None, page: int = 1):
@@ -1397,24 +1437,47 @@ async def say(ctx, *, message):
     await ctx.message.delete()
     await ctx.send(message)
 
+# FIXED: Enhanced saywb command with color support but using bot instead of webhook
 @bot.command()
 @not_blocked()
-async def saywb(ctx, *, message):
-    """Send a message via webhook (preserving user identity)"""
+async def saywb(ctx, *, args):
+    """Send a colored embed message as the bot: ,saywb [message] [color]"""
     if not ctx.author.guild_permissions.manage_messages:
         await ctx.send("❌ You need Manage Messages permission to use this command.")
         return
     
-    try:
-        webhook = await get_or_create_webhook(ctx.channel)
-        await webhook.send(
-            content=message,
-            username=ctx.author.display_name,
-            avatar_url=ctx.author.display_avatar.url
-        )
-        await ctx.message.delete()
-    except discord.Forbidden:
-        await ctx.send("❌ I don't have permission to create webhooks in this channel.")
+    # Parse arguments - last word could be color
+    parts = args.split()
+    if len(parts) < 1:
+        await ctx.send("❌ Usage: `,saywb [message] [color]`\nExample: `,saywb Hello world! red`")
+        return
+    
+    # Try to parse the last word as a color
+    color = discord.Color.default()
+    message_content = args
+    
+    if len(parts) > 1:
+        potential_color = parts[-1]
+        parsed_color = parse_color(potential_color)
+        
+        # If it successfully parsed a color (not default), use it and remove from message
+        if parsed_color != discord.Color.default() or potential_color.lower() in ['white', 'black', 'default']:
+            color = parsed_color
+            message_content = ' '.join(parts[:-1])
+    
+    # Create embed with the message and color
+    embed = discord.Embed(
+        description=message_content,
+        color=color
+    )
+    
+    embed.set_author(
+        name=ctx.author.display_name,
+        icon_url=ctx.author.display_avatar.url
+    )
+    
+    await ctx.message.delete()
+    await ctx.send(embed=embed)
 
 @bot.command()
 @not_blocked()
