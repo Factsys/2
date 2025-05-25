@@ -99,6 +99,51 @@ def filter_content(content):
     
     return ' '.join(words)
 
+# Helper function to parse color from hex string
+def parse_color(color_str):
+    """Parse color from hex string (e.g., #ff0000, ff0000, red)"""
+    if not color_str:
+        return discord.Color.default()
+    
+    # Remove # if present
+    if color_str.startswith('#'):
+        color_str = color_str[1:]
+    
+    # Handle common color names
+    color_names = {
+        'red': 0xff0000,
+        'green': 0x00ff00,
+        'blue': 0x0000ff,
+        'yellow': 0xffff00,
+        'purple': 0x800080,
+        'orange': 0xffa500,
+        'pink': 0xffc0cb,
+        'black': 0x000000,
+        'white': 0xffffff,
+        'gray': 0x808080,
+        'grey': 0x808080,
+        'cyan': 0x00ffff,
+        'magenta': 0xff00ff,
+        'gold': 0xffd700,
+        'silver': 0xc0c0c0
+    }
+    
+    if color_str.lower() in color_names:
+        return discord.Color(color_names[color_str.lower()])
+    
+    # Try to parse as hex
+    try:
+        if len(color_str) == 6:
+            return discord.Color(int(color_str, 16))
+        elif len(color_str) == 3:
+            # Convert 3-digit hex to 6-digit
+            expanded = ''.join([c*2 for c in color_str])
+            return discord.Color(int(expanded, 16))
+    except ValueError:
+        pass
+    
+    return discord.Color.default()
+
 # Smart user finder function (like Dyno)
 def find_user_by_name(guild, search_term):
     """Find user by partial name match, similar to Dyno bot"""
@@ -661,6 +706,37 @@ async def say_slash(interaction: discord.Interaction, message: str):
     await interaction.response.send_message("Message sent!", ephemeral=True)
     await interaction.followup.send(message)
 
+# NEW: /saywb webhook command
+@bot.tree.command(name="saywb", description="Make the bot say something using webhook (mod only)")
+@app_commands.describe(
+    message="The message for the bot to say",
+    color="Optional color (hex code, color name, or 3/6 digit hex)"
+)
+@check_moderator()
+async def saywb_slash(interaction: discord.Interaction, message: str, color: str = None):
+    try:
+        # Create webhook
+        webhook = await interaction.channel.create_webhook(name="SnipeBot Webhook")
+        
+        # Parse color
+        embed_color = parse_color(color) if color else discord.Color.default()
+        
+        # Create embed
+        embed = discord.Embed(description=message, color=embed_color)
+        
+        # Send via webhook
+        await webhook.send(embed=embed, username="SnipeBot", avatar_url=bot.user.avatar.url if bot.user.avatar else None)
+        
+        # Delete webhook
+        await webhook.delete()
+        
+        await interaction.response.send_message("✅ Webhook message sent!", ephemeral=True)
+        
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to create webhooks in this channel.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
 @bot.tree.command(name="rename", description="Change someone's nickname (requires manage nicknames)")
 @app_commands.describe(member="The member to rename", new_nickname="The new nickname")
 @check_admin_or_permissions(manage_nicknames=True)
@@ -725,18 +801,19 @@ async def clear_slash(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="editsnipe", description="Display the most recently edited message")
-@app_commands.describe(page="Page number (1-100)")
-async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
-    channel = interaction.channel
-    if channel.id not in edited_messages or not edited_messages[channel.id]:
-        await interaction.response.send_message("No recently edited messages in this channel.", ephemeral=True)
+@app_commands.describe(page="Page number (1-100)", channel="Channel to check (optional)")
+async def editsnipe_slash(interaction: discord.Interaction, page: int = 1, channel: discord.TextChannel = None):
+    target_channel = channel or interaction.channel
+    
+    if target_channel.id not in edited_messages or not edited_messages[target_channel.id]:
+        await interaction.response.send_message(f"No recently edited messages in {target_channel.mention}.", ephemeral=True)
         return
 
-    if page < 1 or page > len(edited_messages[channel.id]):
-        await interaction.response.send_message(f"Page must be between 1 and {len(edited_messages[channel.id])}.", ephemeral=True)
+    if page < 1 or page > len(edited_messages[target_channel.id]):
+        await interaction.response.send_message(f"Page must be between 1 and {len(edited_messages[target_channel.id])}.", ephemeral=True)
         return
 
-    edit = edited_messages[channel.id][-page]
+    edit = edited_messages[target_channel.id][-page]
     embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
     
     # Filter content if it contains offensive words
@@ -752,24 +829,19 @@ async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
     embed.add_field(name="**After:**", value=after_content, inline=False)
     embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
+    embed.add_field(name="**Channel:**", value=target_channel.mention, inline=True)
+    embed.set_footer(text=f"Page {page} of {len(edited_messages[target_channel.id])} | Made with ❤ | Werrzzzy")
     
     await interaction.response.send_message(embed=embed)
 
-# NEW: /time command for specific user only
-@bot.tree.command(name="time", description="Show bot uptime (restricted access)")
-@check_specific_user()
-async def time_slash(interaction: discord.Interaction):
-    current_time = time.time()
-    uptime_seconds = current_time - BOT_START_TIME
-    uptime_formatted = format_uptime(uptime_seconds)
-    
-    embed = discord.Embed(title="⏰ Bot Uptime", color=discord.Color.blue())
-    embed.add_field(name="Uptime", value=uptime_formatted, inline=False)
-    embed.add_field(name="Exact Seconds", value=f"{int(uptime_seconds)} seconds", inline=False)
+@bot.tree.command(name="manage", description="View bot management information")
+async def manage_slash(interaction: discord.Interaction):
+    embed = discord.Embed(title="🔧 Bot Management", color=discord.Color.blue())
+    embed.add_field(name="Bot Owner", value="<@776883692983156736>", inline=True)
+    embed.add_field(name="Bot Name", value=bot.user.name, inline=True)
+    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
     embed.set_footer(text="Made with ❤ | Werrzzzy")
-    
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="ping", description="Check bot latency")
 async def ping_slash(interaction: discord.Interaction):
@@ -779,72 +851,19 @@ async def ping_slash(interaction: discord.Interaction):
     embed.set_footer(text="Made with ❤ | Werrzzzy")
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="manage", description="View bot management info")
-async def manage_slash(interaction: discord.Interaction):
-    embed = discord.Embed(title="👨‍💻 Bot Management", color=discord.Color.purple())
-    embed.add_field(name="Bot Owner", value="Werrzzzy", inline=False)
-    embed.add_field(name="Bot Version", value="2.0", inline=False)
-    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
-    embed.add_field(name="Users", value=str(len(bot.users)), inline=True)
+# NEW: /time command (restricted to specific user)
+@bot.tree.command(name="time", description="Show bot uptime (restricted access)")
+@check_specific_user()
+async def time_slash(interaction: discord.Interaction):
+    current_time = time.time()
+    uptime_seconds = current_time - BOT_START_TIME
+    uptime_formatted = format_uptime(uptime_seconds)
+    
+    embed = discord.Embed(title="⏰ Bot Uptime", color=discord.Color.gold())
+    embed.add_field(name="Uptime", value=uptime_formatted, inline=False)
+    embed.add_field(name="Started", value=f"<t:{int(BOT_START_TIME)}:F>", inline=False)
     embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="help", description="Show bot commands")
-async def help_slash(interaction: discord.Interaction):
-    """Display bot commands help"""
-    embed = discord.Embed(
-        title="🤖 SnipeBot Commands",
-        description="*A Discord bot for tracking deleted and edited messages with content filtering.*",
-        color=discord.Color.blue()
-    )
-    
-    # Snipe Commands
-    embed.add_field(
-        name="📜 Snipe Commands",
-        value=(
-            "` /snipe [page] [channel]` — View a deleted message\n"
-            "` /sp [channel]` — View all deleted message pages\n"
-            "` /snipepages [channel]` — Same as /sp\n"
-            "` /spforce [channel]` — View unfiltered deleted messages (Mods only)\n"
-            "` /spf [channel]` — Shortcut for /spforce"
-        ),
-        inline=False
-    )
-    
-    # Edit Snipe Commands
-    embed.add_field(
-        name="✏️ Edit Snipe Commands",
-        value=(
-            "` /editsnipe [page]` — View an edited message"
-        ),
-        inline=False
-    )
-    
-    # Moderation Commands
-    embed.add_field(
-        name="🛡️ Moderation Commands (Mods only)",
-        value=(
-            "` /say <message>` — Make the bot send a message\n"
-            "` /message <user> <msg>` — Send a DM to a user\n"
-            "` /rename <user> <nickname>` — Change a user's nickname\n"
-            "` /clear` — Clear all sniped messages"
-        ),
-        inline=False
-    )
-
-    # Management Commands
-    embed.add_field(
-        name="👨‍💻 Management Commands",
-        value=(
-            "` /manage` — View bot management info\n"
-            "` /ping` — Check bot latency\n"
-            "` /help` — Show this command list"
-        ),
-        inline=False
-    )
-    
-    embed.set_footer(text="Made with ❤ by Werrzzzy")
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ========== PREFIX COMMANDS ==========
 
@@ -977,7 +996,7 @@ async def sp_command(ctx, channel: discord.TextChannel = None):
     view = RegularSnipePaginationView(messages, target_channel)
     embed = view.get_embed()
     
-    # Update embed title to show channel if specified
+    # Update embed title to show channel if checking other channel
     if channel:
         embed.title = f"📜 Deleted Messages List - {target_channel.name}"
     
@@ -999,7 +1018,7 @@ async def snipepages_command(ctx, channel: discord.TextChannel = None):
     view = RegularSnipePaginationView(messages, target_channel)
     embed = view.get_embed()
     
-    # Update embed title to show channel if specified
+    # Update embed title to show channel if checking other channel
     if channel:
         embed.title = f"📜 Deleted Messages List - {target_channel.name}"
     
@@ -1030,7 +1049,7 @@ async def spforce_command(ctx, channel: discord.TextChannel = None):
     view = ModeratorSnipePaginationView(messages, target_channel)
     embed = view.get_embed()
     
-    # Update embed title to show channel if specified
+    # Update embed title to show channel if checking other channel
     if channel:
         embed.title = f"🔒 Moderator Snipe Pages (Unfiltered) - {target_channel.name}"
     
@@ -1044,18 +1063,19 @@ async def spf_command(ctx, channel: discord.TextChannel = None):
     await spforce_command(ctx, channel)
 
 @bot.command(name="editsnipe")
-async def editsnipe_command(ctx, page: int = 1):
+async def editsnipe_command(ctx, page: int = 1, channel: discord.TextChannel = None):
     """Display an edit sniped message by page number"""
-    channel = ctx.channel
-    if channel.id not in edited_messages or not edited_messages[channel.id]:
-        await ctx.send("No recently edited messages in this channel.")
+    target_channel = channel or ctx.channel
+    
+    if target_channel.id not in edited_messages or not edited_messages[target_channel.id]:
+        await ctx.send(f"No recently edited messages in {target_channel.mention}.")
         return
 
-    if page < 1 or page > len(edited_messages[channel.id]):
-        await ctx.send(f"Page must be between 1 and {len(edited_messages[channel.id])}.")
+    if page < 1 or page > len(edited_messages[target_channel.id]):
+        await ctx.send(f"Page must be between 1 and {len(edited_messages[target_channel.id])}.")
         return
 
-    edit = edited_messages[channel.id][-page]
+    edit = edited_messages[target_channel.id][-page]
     embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
     
     # Filter content if it contains offensive words
@@ -1071,14 +1091,16 @@ async def editsnipe_command(ctx, page: int = 1):
     embed.add_field(name="**After:**", value=after_content, inline=False)
     embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
+    if channel:
+        embed.add_field(name="**Channel:**", value=target_channel.mention, inline=True)
+    embed.set_footer(text=f"Page {page} of {len(edited_messages[target_channel.id])} | Made with ❤ | Werrzzzy")
     
     await ctx.send(embed=embed)
 
 @bot.command(name="es")
-async def es_command(ctx, page: int = 1):
+async def es_command(ctx, page: int = 1, channel: discord.TextChannel = None):
     """Shortcut for editsnipe command"""
-    await editsnipe_command(ctx, page)
+    await editsnipe_command(ctx, page, channel)
 
 @bot.command(name="say")
 @is_moderator()
@@ -1086,6 +1108,47 @@ async def say_command(ctx, *, message):
     """Make the bot say something (moderator only)"""
     await ctx.message.delete()  # Delete the command message
     await ctx.send(message)
+
+# NEW: ,saywb webhook command
+@bot.command(name="saywb")
+@is_moderator()
+async def saywb_command(ctx, color_or_message=None, *, message=None):
+    """Make the bot say something using webhook (moderator only)"""
+    try:
+        # Parse arguments - if message is None, then color_or_message is actually the message
+        if message is None:
+            actual_message = color_or_message
+            color = None
+        else:
+            color = color_or_message
+            actual_message = message
+        
+        if not actual_message:
+            await ctx.send("❌ Please provide a message to send.")
+            return
+        
+        # Delete the command message
+        await ctx.message.delete()
+        
+        # Create webhook
+        webhook = await ctx.channel.create_webhook(name="SnipeBot Webhook")
+        
+        # Parse color
+        embed_color = parse_color(color) if color else discord.Color.default()
+        
+        # Create embed
+        embed = discord.Embed(description=actual_message, color=embed_color)
+        
+        # Send via webhook
+        await webhook.send(embed=embed, username="SnipeBot", avatar_url=bot.user.avatar.url if bot.user.avatar else None)
+        
+        # Delete webhook
+        await webhook.delete()
+        
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to create webhooks in this channel.")
+    except Exception as e:
+        await ctx.send(f"❌ An error occurred: {str(e)}")
 
 @bot.command(name="rename")
 @has_manage_nicknames()
@@ -1122,7 +1185,7 @@ async def rename_command(ctx, user_search, *, new_nickname):
 @bot.command(name="message")
 @is_moderator()
 async def message_command(ctx, user_search, *, message):
-    """Send a message to a user (moderator only)"""
+    """Send a DM to a user (moderator only)"""
     try:
         # Try to find user by ID first
         try:
@@ -1165,6 +1228,16 @@ async def clear_command(ctx):
     embed.set_footer(text="Made with ❤ | Werrzzzy")
     await ctx.send(embed=embed)
 
+@bot.command(name="manage")
+async def manage_command(ctx):
+    """View bot management information"""
+    embed = discord.Embed(title="🔧 Bot Management", color=discord.Color.blue())
+    embed.add_field(name="Bot Owner", value="<@776883692983156736>", inline=True)
+    embed.add_field(name="Bot Name", value=bot.user.name, inline=True)
+    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
+    await ctx.send(embed=embed)
+
 @bot.command(name="ping")
 async def ping_command(ctx):
     """Check bot latency"""
@@ -1174,34 +1247,22 @@ async def ping_command(ctx):
     embed.set_footer(text="Made with ❤ | Werrzzzy")
     await ctx.send(embed=embed)
 
-@bot.command(name="manage")
-async def manage_command(ctx):
-    """View bot management info"""
-    embed = discord.Embed(title="👨‍💻 Bot Management", color=discord.Color.purple())
-    embed.add_field(name="Bot Owner", value="Werrzzzy", inline=False)
-    embed.add_field(name="Bot Version", value="2.0", inline=False)
-    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
-    embed.add_field(name="Users", value=str(len(bot.users)), inline=True)
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await ctx.send(embed=embed)
-
-# NEW: ,time command for specific user only
+# NEW: ,time command (restricted to specific user)
 @bot.command(name="time")
 @is_specific_user()
 async def time_command(ctx):
-    """Show bot uptime (restricted access)"""
+    """Show bot uptime (restricted to specific user)"""
     current_time = time.time()
     uptime_seconds = current_time - BOT_START_TIME
     uptime_formatted = format_uptime(uptime_seconds)
     
-    embed = discord.Embed(title="⏰ Bot Uptime", color=discord.Color.blue())
+    embed = discord.Embed(title="⏰ Bot Uptime", color=discord.Color.gold())
     embed.add_field(name="Uptime", value=uptime_formatted, inline=False)
-    embed.add_field(name="Exact Seconds", value=f"{int(uptime_seconds)} seconds", inline=False)
+    embed.add_field(name="Started", value=f"<t:{int(BOT_START_TIME)}:F>", inline=False)
     embed.set_footer(text="Made with ❤ | Werrzzzy")
-    
     await ctx.send(embed=embed)
 
-# Start Flask server and run bot
+# Start the bot
 if __name__ == "__main__":
     run_flask()
     bot.run(os.getenv("TOKEN"))
