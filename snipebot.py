@@ -7,6 +7,7 @@ from threading import Thread
 import re
 import math
 import difflib
+import time
 
 # Flask app to keep the bot running on Render
 app = Flask('')
@@ -19,6 +20,9 @@ def run_flask():
     port = int(os.getenv("PORT", 8080))
     server = Thread(target=app.run, kwargs={"host": "0.0.0.0", "port": port}, daemon=True)
     server.start()
+
+# Bot start time for uptime tracking
+BOT_START_TIME = time.time()
 
 # Step 1: Normalize weird characters to plain letters
 def normalize_text(text: str) -> str:
@@ -179,6 +183,25 @@ def truncate_content(content, max_length=50):
         return content
     return content[:max_length-3] + "..."
 
+# Helper function to format uptime
+def format_uptime(seconds):
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = int(seconds % 60)
+    
+    parts = []
+    if days > 0:
+        parts.append(f"{days} day{'s' if days != 1 else ''}")
+    if hours > 0:
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    if minutes > 0:
+        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    if seconds > 0 or not parts:
+        parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
+    
+    return ", ".join(parts)
+
 # Custom check that allows administrators and owners to bypass permission requirements
 def has_permission_or_is_admin():
     async def predicate(ctx):
@@ -250,7 +273,18 @@ def check_moderator():
                 interaction.user.guild_permissions.ban_members)
     return app_commands.check(predicate)
 
-# REGULAR Pagination View for ,sp (FILTERED CONTENT)
+# Custom check for specific user ID
+def is_specific_user():
+    async def predicate(ctx):
+        return ctx.author.id == 776883692983156736
+    return commands.check(predicate)
+
+def check_specific_user():
+    async def predicate(interaction: discord.Interaction):
+        return interaction.user.id == 776883692983156736
+    return app_commands.check(predicate)
+
+# REGULAR Pagination View for ,sp (FILTERED CONTENT - ALL MESSAGES)
 class RegularSnipePaginationView(discord.ui.View):
     def __init__(self, messages, channel, timeout=300):
         super().__init__(timeout=timeout)
@@ -335,7 +369,7 @@ class RegularSnipePaginationView(discord.ui.View):
         else:
             await interaction.response.defer()
 
-# MODERATOR Pagination View for ,spforce (UNFILTERED CONTENT)
+# MODERATOR Pagination View for ,spforce (ONLY OFFENSIVE MESSAGES)
 class ModeratorSnipePaginationView(discord.ui.View):
     def __init__(self, messages, channel, timeout=300):
         super().__init__(timeout=timeout)
@@ -368,11 +402,11 @@ class ModeratorSnipePaginationView(discord.ui.View):
         if not page_messages:
             embed.add_field(
                 name="No Messages",
-                value="No deleted messages found in this channel.",
+                value="No offensive messages found in this channel.",
                 inline=False
             )
         else:
-            # Build numbered list of messages - NEVER FILTER FOR MODERATORS
+            # Build numbered list of messages - SHOW RAW OFFENSIVE CONTENT FOR MODERATORS
             message_list = []
             for i, msg in enumerate(page_messages, start=start_idx + 1):
                 content = msg['content'] or "*No text content*"
@@ -496,18 +530,19 @@ async def on_message_edit(before, after):
 # ========== SLASH COMMANDS ==========
 
 @bot.tree.command(name="snipe", description="Displays the most recently deleted message")
-@app_commands.describe(page="Page number (1-100)")
-async def snipe_slash(interaction: discord.Interaction, page: int = 1):
-    channel = interaction.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await interaction.response.send_message("No recently deleted messages in this channel.", ephemeral=True)
+@app_commands.describe(page="Page number (1-100)", channel="Channel to check (optional)")
+async def snipe_slash(interaction: discord.Interaction, page: int = 1, channel: discord.TextChannel = None):
+    target_channel = channel or interaction.channel
+    
+    if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
+        await interaction.response.send_message(f"No recently deleted messages in {target_channel.mention}.", ephemeral=True)
         return
 
-    if page < 1 or page > len(sniped_messages[channel.id]):
-        await interaction.response.send_message(f"Page must be between 1 and {len(sniped_messages[channel.id])}.", ephemeral=True)
+    if page < 1 or page > len(sniped_messages[target_channel.id]):
+        await interaction.response.send_message(f"Page must be between 1 and {len(sniped_messages[target_channel.id])}.", ephemeral=True)
         return
 
-    snipe = sniped_messages[channel.id][-page]
+    snipe = sniped_messages[target_channel.id][-page]
     embed = discord.Embed(title="📜 Sniped Message", color=discord.Color.gold())
     
     # Filter content if it contains offensive words
@@ -522,7 +557,8 @@ async def snipe_slash(interaction: discord.Interaction, page: int = 1):
     embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
     
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made with ❤ | Werrzzzy")
+    embed.add_field(name="**Channel:**", value=target_channel.mention, inline=True)
+    embed.set_footer(text=f"Page {page} of {len(sniped_messages[target_channel.id])} | Made with ❤ | Werrzzzy")
 
     # Handle attachments and media links (IMAGES/GIFS/VIDEOS)
     media_url = get_media_url(snipe['content'], snipe['attachments'])
@@ -541,53 +577,82 @@ async def snipe_slash(interaction: discord.Interaction, page: int = 1):
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="sp", description="Display a paginated list of deleted messages")
-async def sp_slash(interaction: discord.Interaction):
-    channel = interaction.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await interaction.response.send_message("No recently deleted messages in this channel.", ephemeral=True)
+@app_commands.describe(channel="Channel to check (optional)")
+async def sp_slash(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    target_channel = channel or interaction.channel
+    
+    if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
+        await interaction.response.send_message(f"No recently deleted messages in {target_channel.mention}.", ephemeral=True)
         return
 
     # Reverse the messages to show newest first
-    messages = list(reversed(sniped_messages[channel.id]))
+    messages = list(reversed(sniped_messages[target_channel.id]))
     
     # Use REGULAR pagination view (filtered content)
-    view = RegularSnipePaginationView(messages, channel)
+    view = RegularSnipePaginationView(messages, target_channel)
     embed = view.get_embed()
+    
+    # Update embed title to show channel
+    embed.title = f"📜 Deleted Messages List - {target_channel.name}"
     
     await interaction.response.send_message(embed=embed, view=view)
 
 @bot.tree.command(name="snipepages", description="Display a paginated list of deleted messages")
-async def snipepages_slash(interaction: discord.Interaction):
-    channel = interaction.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await interaction.response.send_message("No recently deleted messages in this channel.", ephemeral=True)
+@app_commands.describe(channel="Channel to check (optional)")
+async def snipepages_slash(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    target_channel = channel or interaction.channel
+    
+    if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
+        await interaction.response.send_message(f"No recently deleted messages in {target_channel.mention}.", ephemeral=True)
         return
 
     # Reverse the messages to show newest first
-    messages = list(reversed(sniped_messages[channel.id]))
+    messages = list(reversed(sniped_messages[target_channel.id]))
     
     # Use REGULAR pagination view (filtered content)
-    view = RegularSnipePaginationView(messages, channel)
+    view = RegularSnipePaginationView(messages, target_channel)
     embed = view.get_embed()
+    
+    # Update embed title to show channel
+    embed.title = f"📜 Deleted Messages List - {target_channel.name}"
     
     await interaction.response.send_message(embed=embed, view=view)
 
-@bot.tree.command(name="spforce", description="Display unfiltered paginated list of deleted messages (mod only)")
+@bot.tree.command(name="spforce", description="Display unfiltered offensive messages only (mod only)")
+@app_commands.describe(channel="Channel to check (optional)")
 @check_moderator()
-async def spforce_slash(interaction: discord.Interaction):
-    channel = interaction.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await interaction.response.send_message("No recently deleted messages in this channel.", ephemeral=True)
+async def spforce_slash(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    target_channel = channel or interaction.channel
+    
+    if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
+        await interaction.response.send_message(f"No recently deleted messages in {target_channel.mention}.", ephemeral=True)
         return
 
+    # Filter to only show messages with offensive content
+    offensive_messages = [msg for msg in sniped_messages[target_channel.id] if msg.get('has_offensive_content', False)]
+    
+    if not offensive_messages:
+        await interaction.response.send_message(f"No offensive messages found in {target_channel.mention}.", ephemeral=True)
+        return
+    
     # Reverse the messages to show newest first
-    messages = list(reversed(sniped_messages[channel.id]))
+    messages = list(reversed(offensive_messages))
     
     # Use MODERATOR pagination view (unfiltered content)
-    view = ModeratorSnipePaginationView(messages, channel)
+    view = ModeratorSnipePaginationView(messages, target_channel)
     embed = view.get_embed()
     
+    # Update embed title to show channel
+    embed.title = f"🔒 Moderator Snipe Pages (Unfiltered) - {target_channel.name}"
+    
     await interaction.response.send_message(embed=embed, view=view)
+
+# NEW: /spf shortcut for spforce
+@bot.tree.command(name="spf", description="Shortcut for spforce - Display unfiltered offensive messages only (mod only)")
+@app_commands.describe(channel="Channel to check (optional)")
+@check_moderator()
+async def spf_slash(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    await spforce_slash(interaction, channel)
 
 @bot.tree.command(name="say", description="Make the bot say something (mod only)")
 @app_commands.describe(message="The message for the bot to say")
@@ -691,74 +756,42 @@ async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="es", description="Shortcut for editsnipe")
-@app_commands.describe(page="Page number (1-100)")
-async def es_slash(interaction: discord.Interaction, page: int = 1):
-    channel = interaction.channel
-    if channel.id not in edited_messages or not edited_messages[channel.id]:
-        await interaction.response.send_message("No recently edited messages in this channel.", ephemeral=True)
-        return
-
-    if page < 1 or page > len(edited_messages[channel.id]):
-        await interaction.response.send_message(f"Page must be between 1 and {len(edited_messages[channel.id])}.", ephemeral=True)
-        return
-
-    edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
+# NEW: /time command for specific user only
+@bot.tree.command(name="time", description="Show bot uptime (restricted access)")
+@check_specific_user()
+async def time_slash(interaction: discord.Interaction):
+    current_time = time.time()
+    uptime_seconds = current_time - BOT_START_TIME
+    uptime_formatted = format_uptime(uptime_seconds)
     
-    # Filter content if it contains offensive words
-    before_content = edit['before_content'] or "*No text content*"
-    after_content = edit['after_content'] or "*No text content*"
-    
-    if edit.get('before_has_offensive_content', False):
-        before_content = filter_content(before_content)
-    if edit.get('after_has_offensive_content', False):
-        after_content = filter_content(after_content)
-    
-    embed.add_field(name="**Before:**", value=before_content, inline=False)
-    embed.add_field(name="**After:**", value=after_content, inline=False)
-    embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
-    embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
-    
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="manage", description="Display bot management information")
-async def manage_slash(interaction: discord.Interaction):
-    """Slash command version of manage"""
-    embed = discord.Embed(
-        title="👨‍💻 Bot Management",
-        color=discord.Color.blue()
-    )
-    embed.add_field(
-        name="Created and managed by:",
-        value="werzzz2_",
-        inline=False
-    )
+    embed = discord.Embed(title="⏰ Bot Uptime", color=discord.Color.blue())
+    embed.add_field(name="Uptime", value=uptime_formatted, inline=False)
+    embed.add_field(name="Exact Seconds", value=f"{int(uptime_seconds)} seconds", inline=False)
     embed.set_footer(text="Made with ❤ | Werrzzzy")
     
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="ping", description="Show bot latency")
+@bot.tree.command(name="ping", description="Check bot latency")
 async def ping_slash(interaction: discord.Interaction):
-    """Slash command version of ping"""
-    latency = round(bot.latency * 1000)  # Convert to milliseconds
-    embed = discord.Embed(
-        title="🏓 Pong!",
-        color=discord.Color.green()
-    )
-    embed.add_field(
-        name="Bot Latency:",
-        value=f"{latency}ms",
-        inline=False
-    )
+    latency = round(bot.latency * 1000)
+    embed = discord.Embed(title="🏓 Pong!", color=discord.Color.green())
+    embed.add_field(name="Latency", value=f"{latency}ms", inline=False)
     embed.set_footer(text="Made with ❤ | Werrzzzy")
-    
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="help", description="Show this command list")
+@bot.tree.command(name="manage", description="View bot management info")
+async def manage_slash(interaction: discord.Interaction):
+    embed = discord.Embed(title="👨‍💻 Bot Management", color=discord.Color.purple())
+    embed.add_field(name="Bot Owner", value="Werrzzzy", inline=False)
+    embed.add_field(name="Bot Version", value="2.0", inline=False)
+    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
+    embed.add_field(name="Users", value=str(len(bot.users)), inline=True)
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="help", description="Show bot commands")
 async def help_slash(interaction: discord.Interaction):
-    """Slash command version of help"""
+    """Display bot commands help"""
     embed = discord.Embed(
         title="🤖 SnipeBot Commands",
         description="*A Discord bot for tracking deleted and edited messages with content filtering.*",
@@ -769,10 +802,11 @@ async def help_slash(interaction: discord.Interaction):
     embed.add_field(
         name="📜 Snipe Commands",
         value=(
-            "` /snipe [page]` — View a deleted message\n"
-            "` /sp` — View all deleted message pages\n"
-            "` /snipepages` — Same as /sp\n"
-            "` /spforce` — View unfiltered deleted messages (Mods only)"
+            "` /snipe [page] [channel]` — View a deleted message\n"
+            "` /sp [channel]` — View all deleted message pages\n"
+            "` /snipepages [channel]` — Same as /sp\n"
+            "` /spforce [channel]` — View unfiltered deleted messages (Mods only)\n"
+            "` /spf [channel]` — Shortcut for /spforce"
         ),
         inline=False
     )
@@ -781,8 +815,7 @@ async def help_slash(interaction: discord.Interaction):
     embed.add_field(
         name="✏️ Edit Snipe Commands",
         value=(
-            "` /editsnipe [page]` — View an edited message\n"
-            "` /es [page]` — Shortcut for /editsnipe"
+            "` /editsnipe [page]` — View an edited message"
         ),
         inline=False
     )
@@ -804,8 +837,8 @@ async def help_slash(interaction: discord.Interaction):
         name="👨‍💻 Management Commands",
         value=(
             "` /manage` — View bot management info\n"
-            "` /help` — Show this command list\n"
-            "` /ping` — Show bot latency"
+            "` /ping` — Check bot latency\n"
+            "` /help` — Show this command list"
         ),
         inline=False
     )
@@ -815,317 +848,7 @@ async def help_slash(interaction: discord.Interaction):
 
 # ========== PREFIX COMMANDS ==========
 
-@bot.command(name="snipe")
-async def snipe_command(ctx, page: int = 1):
-    """Display the most recently deleted message"""
-    channel = ctx.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await ctx.send("No recently deleted messages in this channel.")
-        return
-
-    if page < 1 or page > len(sniped_messages[channel.id]):
-        await ctx.send(f"Page must be between 1 and {len(sniped_messages[channel.id])}.")
-        return
-
-    snipe = sniped_messages[channel.id][-page]
-    embed = discord.Embed(title="📜 Sniped Message", color=discord.Color.gold())
-    
-    # Filter content if it contains offensive words
-    content = snipe['content'] or "*No text content*"
-    if snipe.get('has_offensive_content', False):
-        content = filter_content(content)
-    
-    embed.add_field(name="**Content:**", value=content, inline=False)
-    
-    # Show who deleted the message - if same person or can't detect, show author name
-    deleted_by = snipe.get('deleted_by', snipe['author'])
-    embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
-    
-    embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made with ❤ | Werrzzzy")
-
-    # Handle attachments and media links (IMAGES/GIFS/VIDEOS)
-    media_url = get_media_url(snipe['content'], snipe['attachments'])
-    
-    if media_url:
-        embed.set_image(url=media_url)
-    elif snipe["attachments"]:
-        for attachment in snipe["attachments"]:
-            if attachment.content_type and attachment.content_type.startswith("image"):
-                embed.set_image(url=attachment.url)
-                break
-            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=attachment.url)
-                break
-
-    await ctx.send(embed=embed)
-
-# NEW: Add ,s as shortcut for ,snipe
-@bot.command(name="s")
-async def s_command(ctx, page: int = 1):
-    """Shortcut for snipe command"""
-    channel = ctx.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await ctx.send("No recently deleted messages in this channel.")
-        return
-
-    if page < 1 or page > len(sniped_messages[channel.id]):
-        await ctx.send(f"Page must be between 1 and {len(sniped_messages[channel.id])}.")
-        return
-
-    snipe = sniped_messages[channel.id][-page]
-    embed = discord.Embed(title="📜 Sniped Message", color=discord.Color.gold())
-    
-    # Filter content if it contains offensive words
-    content = snipe['content'] or "*No text content*"
-    if snipe.get('has_offensive_content', False):
-        content = filter_content(content)
-    
-    embed.add_field(name="**Content:**", value=content, inline=False)
-    
-    # Show who deleted the message - if same person or can't detect, show author name
-    deleted_by = snipe.get('deleted_by', snipe['author'])
-    embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
-    
-    embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(sniped_messages[channel.id])} | Made with ❤ | Werrzzzy")
-
-    # Handle attachments and media links (IMAGES/GIFS/VIDEOS)
-    media_url = get_media_url(snipe['content'], snipe['attachments'])
-    
-    if media_url:
-        embed.set_image(url=media_url)
-    elif snipe["attachments"]:
-        for attachment in snipe["attachments"]:
-            if attachment.content_type and attachment.content_type.startswith("image"):
-                embed.set_image(url=attachment.url)
-                break
-            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                embed.set_image(url=attachment.url)
-                break
-
-    await ctx.send(embed=embed)
-
-@bot.command(name="sp")
-async def sp_command(ctx):
-    """Display a paginated list of deleted messages"""
-    channel = ctx.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await ctx.send("No recently deleted messages in this channel.")
-        return
-
-    # Reverse the messages to show newest first
-    messages = list(reversed(sniped_messages[channel.id]))
-    
-    # Use REGULAR pagination view (filtered content)
-    view = RegularSnipePaginationView(messages, channel)
-    embed = view.get_embed()
-    
-    await ctx.send(embed=embed, view=view)
-
-@bot.command(name="snipepages")
-async def snipepages_command(ctx):
-    """Display a paginated list of deleted messages"""
-    channel = ctx.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await ctx.send("No recently deleted messages in this channel.")
-        return
-
-    # Reverse the messages to show newest first
-    messages = list(reversed(sniped_messages[channel.id]))
-    
-    # Use REGULAR pagination view (filtered content)
-    view = RegularSnipePaginationView(messages, channel)
-    embed = view.get_embed()
-    
-    await ctx.send(embed=embed, view=view)
-
-@bot.command(name="spforce")
-@is_moderator()
-async def spforce_command(ctx):
-    """Display unfiltered paginated list of deleted messages (mod only)"""
-    channel = ctx.channel
-    if channel.id not in sniped_messages or not sniped_messages[channel.id]:
-        await ctx.send("No recently deleted messages in this channel.")
-        return
-
-    # Reverse the messages to show newest first
-    messages = list(reversed(sniped_messages[channel.id]))
-    
-    # Use MODERATOR pagination view (unfiltered content)
-    view = ModeratorSnipePaginationView(messages, channel)
-    embed = view.get_embed()
-    
-    await ctx.send(embed=embed, view=view)
-
-@bot.command(name="editsnipe")
-async def editsnipe_command(ctx, page: int = 1):
-    """Display the most recently edited message"""
-    channel = ctx.channel
-    if channel.id not in edited_messages or not edited_messages[channel.id]:
-        await ctx.send("No recently edited messages in this channel.")
-        return
-
-    if page < 1 or page > len(edited_messages[channel.id]):
-        await ctx.send(f"Page must be between 1 and {len(edited_messages[channel.id])}.")
-        return
-
-    edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
-    
-    # Filter content if it contains offensive words
-    before_content = edit['before_content'] or "*No text content*"
-    after_content = edit['after_content'] or "*No text content*"
-    
-    if edit.get('before_has_offensive_content', False):
-        before_content = filter_content(before_content)
-    if edit.get('after_has_offensive_content', False):
-        after_content = filter_content(after_content)
-    
-    embed.add_field(name="**Before:**", value=before_content, inline=False)
-    embed.add_field(name="**After:**", value=after_content, inline=False)
-    embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
-    embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
-    
-    await ctx.send(embed=embed)
-
-@bot.command(name="es")
-async def es_command(ctx, page: int = 1):
-    """Shortcut for editsnipe"""
-    channel = ctx.channel
-    if channel.id not in edited_messages or not edited_messages[channel.id]:
-        await ctx.send("No recently edited messages in this channel.")
-        return
-
-    if page < 1 or page > len(edited_messages[channel.id]):
-        await ctx.send(f"Page must be between 1 and {len(edited_messages[channel.id])}.")
-        return
-
-    edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
-    
-    # Filter content if it contains offensive words
-    before_content = edit['before_content'] or "*No text content*"
-    after_content = edit['after_content'] or "*No text content*"
-    
-    if edit.get('before_has_offensive_content', False):
-        before_content = filter_content(before_content)
-    if edit.get('after_has_offensive_content', False):
-        after_content = filter_content(after_content)
-    
-    embed.add_field(name="**Before:**", value=before_content, inline=False)
-    embed.add_field(name="**After:**", value=after_content, inline=False)
-    embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
-    embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
-    
-    await ctx.send(embed=embed)
-
-@bot.command(name="say")
-@is_moderator()
-async def say_command(ctx, *, message):
-    """Make the bot say something (mod only)"""
-    await ctx.message.delete()
-    await ctx.send(message)
-
-@bot.command(name="rename")
-@has_manage_nicknames()
-async def rename_command(ctx, member: discord.Member, *, new_nickname):
-    """Change someone's nickname (requires manage nicknames)"""
-    try:
-        old_nick = member.display_name
-        await member.edit(nick=new_nickname)
-        embed = discord.Embed(title="✅ Nickname Changed", color=discord.Color.green())
-        embed.add_field(name="Member", value=member.mention, inline=True)
-        embed.add_field(name="Old Nickname", value=old_nick, inline=True)
-        embed.add_field(name="New Nickname", value=new_nickname, inline=True)
-        embed.set_footer(text="Made with ❤ | Werrzzzy")
-        await ctx.send(embed=embed)
-    except discord.Forbidden:
-        await ctx.send("❌ I don't have permission to change this user's nickname.")
-    except Exception as e:
-        await ctx.send(f"❌ An error occurred: {str(e)}")
-
-@bot.command(name="message")
-@is_moderator()
-async def message_command(ctx, user_search, *, message):
-    """Send a message to a user (mod only)"""
-    try:
-        # Try to find user by ID first
-        try:
-            user = bot.get_user(int(user_search))
-        except ValueError:
-            user = None
-        
-        # If not found by ID, search by name
-        if not user:
-            user = find_user_by_name(ctx.guild, user_search)
-        
-        if not user:
-            await ctx.send(f"❌ No user found matching '{user_search}'.")
-            return
-        
-        # Send simple message (no embed/webhook design)
-        await user.send(message)
-        await ctx.send(f"✅ Message sent to {user.display_name}!")
-    except discord.Forbidden:
-        await ctx.send("❌ Could not send message to this user (they may have DMs disabled).")
-    except Exception as e:
-        await ctx.send(f"❌ An error occurred: {str(e)}")
-
-@bot.command(name="clear")
-@commands.has_permissions(manage_messages=True)
-async def clear_command(ctx):
-    """Clear all sniped messages (admin only)"""
-    channel = ctx.channel
-    snipe_count = len(sniped_messages.get(channel.id, []))
-    edit_count = len(edited_messages.get(channel.id, []))
-    
-    if channel.id in sniped_messages:
-        sniped_messages[channel.id] = []
-    if channel.id in edited_messages:
-        edited_messages[channel.id] = []
-    
-    embed = discord.Embed(title="✅ Messages Cleared", color=discord.Color.green())
-    embed.add_field(name="Deleted Messages Cleared", value=str(snipe_count), inline=True)
-    embed.add_field(name="Edited Messages Cleared", value=str(edit_count), inline=True)
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await ctx.send(embed=embed)
-
-@bot.command(name="manage")
-async def manage_command(ctx):
-    """Display bot management information"""
-    embed = discord.Embed(
-        title="👨‍💻 Bot Management",
-        color=discord.Color.blue()
-    )
-    embed.add_field(
-        name="Created and managed by:",
-        value="werzzz2_",
-        inline=False
-    )
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    
-    await ctx.send(embed=embed)
-
-@bot.command(name="ping")
-async def ping_command(ctx):
-    """Display bot latency"""
-    latency = round(bot.latency * 1000)  # Convert to milliseconds
-    embed = discord.Embed(
-        title="🏓 Pong!",
-        color=discord.Color.green()
-    )
-    embed.add_field(
-        name="Bot Latency:",
-        value=f"{latency}ms",
-        inline=False
-    )
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    
-    await ctx.send(embed=embed)
-
+# UPDATED HELP COMMAND with proper spacing and organization
 @bot.command(name="help")
 async def help_command(ctx):
     """Display bot commands help"""
@@ -1175,8 +898,8 @@ async def help_command(ctx):
         name="👨‍💻 Management Commands",
         value=(
             "` ,manage` — View bot management info\n"
-            "` ,help` — Show this command list\n"
-            "` ,ping` — Show bot latency"
+            "` ,ping` — Check bot latency\n"
+            "` ,help` — Show this command list"
         ),
         inline=False
     )
@@ -1184,8 +907,301 @@ async def help_command(ctx):
     embed.set_footer(text="Made with ❤ by Werrzzzy")
     await ctx.send(embed=embed)
 
-# ========== BOT STARTUP ==========
+@bot.command(name="snipe")
+async def snipe_command(ctx, page: int = 1, channel: discord.TextChannel = None):
+    """Display a sniped message by page number"""
+    target_channel = channel or ctx.channel
+    
+    if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
+        await ctx.send(f"No recently deleted messages in {target_channel.mention}.")
+        return
 
+    if page < 1 or page > len(sniped_messages[target_channel.id]):
+        await ctx.send(f"Page must be between 1 and {len(sniped_messages[target_channel.id])}.")
+        return
+
+    snipe = sniped_messages[target_channel.id][-page]
+    embed = discord.Embed(title="📜 Sniped Message", color=discord.Color.gold())
+    
+    # Filter content if it contains offensive words
+    content = snipe['content'] or "*No text content*"
+    if snipe.get('has_offensive_content', False):
+        content = filter_content(content)
+    
+    embed.add_field(name="**Content:**", value=content, inline=False)
+    
+    # Show who deleted the message - if same person or can't detect, show author name
+    deleted_by = snipe.get('deleted_by', snipe['author'])
+    embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
+    
+    embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
+    if channel:
+        embed.add_field(name="**Channel:**", value=target_channel.mention, inline=True)
+    embed.set_footer(text=f"Page {page} of {len(sniped_messages[target_channel.id])} | Made with ❤ | Werrzzzy")
+
+    # Handle attachments and media links (IMAGES/GIFS/VIDEOS)
+    media_url = get_media_url(snipe['content'], snipe['attachments'])
+    
+    if media_url:
+        embed.set_image(url=media_url)
+    elif snipe["attachments"]:
+        for attachment in snipe["attachments"]:
+            if attachment.content_type and attachment.content_type.startswith("image"):
+                embed.set_image(url=attachment.url)
+                break
+            if attachment.url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                embed.set_image(url=attachment.url)
+                break
+
+    await ctx.send(embed=embed)
+
+# NEW: ,s shortcut command for snipe
+@bot.command(name="s")
+async def s_command(ctx, page: int = 1, channel: discord.TextChannel = None):
+    """Shortcut for snipe command"""
+    await snipe_command(ctx, page, channel)
+
+@bot.command(name="sp")
+async def sp_command(ctx, channel: discord.TextChannel = None):
+    """Display paginated list of all deleted messages"""
+    target_channel = channel or ctx.channel
+    
+    if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
+        await ctx.send(f"No recently deleted messages in {target_channel.mention}.")
+        return
+
+    # Reverse the messages to show newest first
+    messages = list(reversed(sniped_messages[target_channel.id]))
+    
+    # Use REGULAR pagination view (filtered content)
+    view = RegularSnipePaginationView(messages, target_channel)
+    embed = view.get_embed()
+    
+    # Update embed title to show channel if specified
+    if channel:
+        embed.title = f"📜 Deleted Messages List - {target_channel.name}"
+    
+    await ctx.send(embed=embed, view=view)
+
+@bot.command(name="snipepages")
+async def snipepages_command(ctx, channel: discord.TextChannel = None):
+    """Display paginated list of all deleted messages"""
+    target_channel = channel or ctx.channel
+    
+    if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
+        await ctx.send(f"No recently deleted messages in {target_channel.mention}.")
+        return
+
+    # Reverse the messages to show newest first
+    messages = list(reversed(sniped_messages[target_channel.id]))
+    
+    # Use REGULAR pagination view (filtered content)
+    view = RegularSnipePaginationView(messages, target_channel)
+    embed = view.get_embed()
+    
+    # Update embed title to show channel if specified
+    if channel:
+        embed.title = f"📜 Deleted Messages List - {target_channel.name}"
+    
+    await ctx.send(embed=embed, view=view)
+
+# MODIFIED: ,spforce now shows ONLY offensive messages
+@bot.command(name="spforce")
+@is_moderator()
+async def spforce_command(ctx, channel: discord.TextChannel = None):
+    """Display paginated list of ONLY offensive deleted messages (moderator only)"""
+    target_channel = channel or ctx.channel
+    
+    if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
+        await ctx.send(f"No recently deleted messages in {target_channel.mention}.")
+        return
+
+    # Filter to only show messages with offensive content
+    offensive_messages = [msg for msg in sniped_messages[target_channel.id] if msg.get('has_offensive_content', False)]
+    
+    if not offensive_messages:
+        await ctx.send(f"No offensive messages found in {target_channel.mention}.")
+        return
+    
+    # Reverse the messages to show newest first
+    messages = list(reversed(offensive_messages))
+    
+    # Use MODERATOR pagination view (unfiltered content)
+    view = ModeratorSnipePaginationView(messages, target_channel)
+    embed = view.get_embed()
+    
+    # Update embed title to show channel if specified
+    if channel:
+        embed.title = f"🔒 Moderator Snipe Pages (Unfiltered) - {target_channel.name}"
+    
+    await ctx.send(embed=embed, view=view)
+
+# NEW: ,spf shortcut for spforce
+@bot.command(name="spf")
+@is_moderator()
+async def spf_command(ctx, channel: discord.TextChannel = None):
+    """Shortcut for spforce command"""
+    await spforce_command(ctx, channel)
+
+@bot.command(name="editsnipe")
+async def editsnipe_command(ctx, page: int = 1):
+    """Display an edit sniped message by page number"""
+    channel = ctx.channel
+    if channel.id not in edited_messages or not edited_messages[channel.id]:
+        await ctx.send("No recently edited messages in this channel.")
+        return
+
+    if page < 1 or page > len(edited_messages[channel.id]):
+        await ctx.send(f"Page must be between 1 and {len(edited_messages[channel.id])}.")
+        return
+
+    edit = edited_messages[channel.id][-page]
+    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
+    
+    # Filter content if it contains offensive words
+    before_content = edit['before_content'] or "*No text content*"
+    after_content = edit['after_content'] or "*No text content*"
+    
+    if edit.get('before_has_offensive_content', False):
+        before_content = filter_content(before_content)
+    if edit.get('after_has_offensive_content', False):
+        after_content = filter_content(after_content)
+    
+    embed.add_field(name="**Before:**", value=before_content, inline=False)
+    embed.add_field(name="**After:**", value=after_content, inline=False)
+    embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
+    embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
+    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name="es")
+async def es_command(ctx, page: int = 1):
+    """Shortcut for editsnipe command"""
+    await editsnipe_command(ctx, page)
+
+@bot.command(name="say")
+@is_moderator()
+async def say_command(ctx, *, message):
+    """Make the bot say something (moderator only)"""
+    await ctx.message.delete()  # Delete the command message
+    await ctx.send(message)
+
+@bot.command(name="rename")
+@has_manage_nicknames()
+async def rename_command(ctx, user_search, *, new_nickname):
+    """Change someone's nickname (requires manage nicknames permission)"""
+    try:
+        # Try to find user by ID first
+        try:
+            member = ctx.guild.get_member(int(user_search))
+        except ValueError:
+            member = None
+        
+        # If not found by ID, search by name
+        if not member:
+            member = find_user_by_name(ctx.guild, user_search)
+        
+        if not member:
+            await ctx.send(f"❌ No member found matching '{user_search}'.")
+            return
+        
+        old_nick = member.display_name
+        await member.edit(nick=new_nickname)
+        embed = discord.Embed(title="✅ Nickname Changed", color=discord.Color.green())
+        embed.add_field(name="Member", value=member.mention, inline=True)
+        embed.add_field(name="Old Nickname", value=old_nick, inline=True)
+        embed.add_field(name="New Nickname", value=new_nickname, inline=True)
+        embed.set_footer(text="Made with ❤ | Werrzzzy")
+        await ctx.send(embed=embed)
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to change this user's nickname.")
+    except Exception as e:
+        await ctx.send(f"❌ An error occurred: {str(e)}")
+
+@bot.command(name="message")
+@is_moderator()
+async def message_command(ctx, user_search, *, message):
+    """Send a message to a user (moderator only)"""
+    try:
+        # Try to find user by ID first
+        try:
+            user = bot.get_user(int(user_search))
+        except ValueError:
+            user = None
+        
+        # If not found by ID, search by name
+        if not user:
+            user = find_user_by_name(ctx.guild, user_search)
+        
+        if not user:
+            await ctx.send(f"❌ No user found matching '{user_search}'.")
+            return
+        
+        # Send simple message (no embed/webhook design)
+        await user.send(message)
+        await ctx.send(f"✅ Message sent to {user.display_name}!")
+    except discord.Forbidden:
+        await ctx.send("❌ Could not send message to this user (they may have DMs disabled).")
+    except Exception as e:
+        await ctx.send(f"❌ An error occurred: {str(e)}")
+
+@bot.command(name="clear")
+@has_permission_or_is_admin()
+async def clear_command(ctx):
+    """Clear all sniped messages (admin only)"""
+    channel = ctx.channel
+    snipe_count = len(sniped_messages.get(channel.id, []))
+    edit_count = len(edited_messages.get(channel.id, []))
+    
+    if channel.id in sniped_messages:
+        sniped_messages[channel.id] = []
+    if channel.id in edited_messages:
+        edited_messages[channel.id] = []
+    
+    embed = discord.Embed(title="✅ Messages Cleared", color=discord.Color.green())
+    embed.add_field(name="Deleted Messages Cleared", value=str(snipe_count), inline=True)
+    embed.add_field(name="Edited Messages Cleared", value=str(edit_count), inline=True)
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
+    await ctx.send(embed=embed)
+
+@bot.command(name="ping")
+async def ping_command(ctx):
+    """Check bot latency"""
+    latency = round(bot.latency * 1000)
+    embed = discord.Embed(title="🏓 Pong!", color=discord.Color.green())
+    embed.add_field(name="Latency", value=f"{latency}ms", inline=False)
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
+    await ctx.send(embed=embed)
+
+@bot.command(name="manage")
+async def manage_command(ctx):
+    """View bot management info"""
+    embed = discord.Embed(title="👨‍💻 Bot Management", color=discord.Color.purple())
+    embed.add_field(name="Bot Owner", value="Werrzzzy", inline=False)
+    embed.add_field(name="Bot Version", value="2.0", inline=False)
+    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
+    embed.add_field(name="Users", value=str(len(bot.users)), inline=True)
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
+    await ctx.send(embed=embed)
+
+# NEW: ,time command for specific user only
+@bot.command(name="time")
+@is_specific_user()
+async def time_command(ctx):
+    """Show bot uptime (restricted access)"""
+    current_time = time.time()
+    uptime_seconds = current_time - BOT_START_TIME
+    uptime_formatted = format_uptime(uptime_seconds)
+    
+    embed = discord.Embed(title="⏰ Bot Uptime", color=discord.Color.blue())
+    embed.add_field(name="Uptime", value=uptime_formatted, inline=False)
+    embed.add_field(name="Exact Seconds", value=f"{int(uptime_seconds)} seconds", inline=False)
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
+    
+    await ctx.send(embed=embed)
+
+# Start Flask server and run bot
 if __name__ == "__main__":
     run_flask()
-    bot.run(os.getenv("DISCORD_TOKEN"))
+    bot.run(os.getenv("TOKEN"))
