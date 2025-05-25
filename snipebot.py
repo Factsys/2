@@ -528,7 +528,7 @@ class HelpPaginationView(discord.ui.View):
             {
                 "title": "📜 FACTSY Commands - Page 3",
                 "fields": [
-                    ("**Reaction Roles**", "`,create` - Create reaction role message\n`/create` - Enhanced reaction roles with context", False),
+                    ("**Reaction Roles**", "`,create` - Create reaction role message\n`/create` - Clean reaction roles with 1-6 options", False),
                     ("**Bot Owner**", "`,manage` - Bot management panel\n`/unblock` - Unblock user from bot", False)
                 ]
             },
@@ -1028,13 +1028,22 @@ async def slash_giveaway(interaction: discord.Interaction, duration: str, winner
         'participants': set()
     }
 
-# ENHANCED: Create command with context support
-@bot.tree.command(name="create", description="Create reaction role message with context")
+# FIXED: Clean create command with only context and reactions
+@bot.tree.command(name="create", description="Create clean reaction role message with 1-6 emoji-role pairs")
 @app_commands.describe(
-    context="Message content with emoji placeholders",
-    color="Embed color (optional)"
+    context="Message content to display",
+    color="Embed color (optional)",
+    emoji1="First emoji", role1="Role for first emoji",
+    emoji2="Second emoji (optional)", role2="Role for second emoji (optional)",
+    emoji3="Third emoji (optional)", role3="Role for third emoji (optional)",
+    emoji4="Fourth emoji (optional)", role4="Role for fourth emoji (optional)",
+    emoji5="Fifth emoji (optional)", role5="Role for fifth emoji (optional)",
+    emoji6="Sixth emoji (optional)", role6="Role for sixth emoji (optional)"
 )
-async def slash_create(interaction: discord.Interaction, context: str, color: str = None):
+async def slash_create(interaction: discord.Interaction, context: str, emoji1: str, role1: discord.Role,
+                      color: str = None, emoji2: str = None, role2: discord.Role = None,
+                      emoji3: str = None, role3: discord.Role = None, emoji4: str = None, role4: discord.Role = None,
+                      emoji5: str = None, role5: discord.Role = None, emoji6: str = None, role6: discord.Role = None):
     if is_user_blocked(interaction.user.id):
         await interaction.response.send_message("❌ You are blocked from using bot functions.", ephemeral=True)
         return
@@ -1045,22 +1054,73 @@ async def slash_create(interaction: discord.Interaction, context: str, color: st
     
     embed_color = parse_color(color) if color else discord.Color.default()
     
+    # Build role mapping
+    role_mapping = {emoji1: role1.id}
+    if emoji2 and role2:
+        role_mapping[emoji2] = role2.id
+    if emoji3 and role3:
+        role_mapping[emoji3] = role3.id
+    if emoji4 and role4:
+        role_mapping[emoji4] = role4.id
+    if emoji5 and role5:
+        role_mapping[emoji5] = role5.id
+    if emoji6 and role6:
+        role_mapping[emoji6] = role6.id
+    
+    # Create clean embed with only context
     embed = discord.Embed(
-        title="🎭 Reaction Roles",
         description=context,
         color=embed_color
     )
     
-    embed.add_field(
-        name="Setup Instructions", 
-        value="React to this message to add emoji-role pairs.\nUse `,create [text] emoji @role` for quick setup.", 
-        inline=False
-    )
-    embed.set_footer(text="This is a reaction role setup message")
-    
     await interaction.response.send_message(embed=embed)
+    message = await interaction.original_response()
     
-    # This creates a template message that can be configured later with prefix commands
+    # Store reaction role mapping
+    reaction_roles[message.id] = role_mapping
+    
+    # Add reactions
+    for emoji in role_mapping.keys():
+        try:
+            await message.add_reaction(emoji)
+        except discord.HTTPException:
+            await interaction.followup.send(f"❌ Could not add reaction {emoji}. Make sure it's a valid emoji.", ephemeral=True)
+
+# FIXED: Webhook say command (saywb) - now sends as bot with colored embed
+@bot.tree.command(name="saywb", description="Send a message as bot via webhook with color")
+@app_commands.describe(
+    message="Message to send",
+    color="Embed color (optional)"
+)
+async def slash_saywb(interaction: discord.Interaction, message: str, color: str = None):
+    if is_user_blocked(interaction.user.id):
+        await interaction.response.send_message("❌ You are blocked from using bot functions.", ephemeral=True)
+        return
+    
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message("❌ You need Manage Messages permission to use this command.", ephemeral=True)
+        return
+    
+    embed_color = parse_color(color) if color else discord.Color.default()
+    
+    try:
+        webhook = await get_or_create_webhook(interaction.channel)
+        
+        # Create embed for the message
+        embed = discord.Embed(
+            description=message,
+            color=embed_color
+        )
+        
+        # Send via webhook using bot's identity
+        await webhook.send(
+            embed=embed,
+            username=bot.user.display_name,
+            avatar_url=bot.user.display_avatar.url
+        )
+        await interaction.response.send_message("✅ Message sent via webhook!", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to create webhooks in this channel.", ephemeral=True)
 
 @bot.tree.command(name="namelock", description="Lock a user's nickname")
 @app_commands.describe(user="User to namelock", nickname="Nickname to lock them to")
@@ -1437,47 +1497,50 @@ async def say(ctx, *, message):
     await ctx.message.delete()
     await ctx.send(message)
 
-# FIXED: Enhanced saywb command with color support but using bot instead of webhook
+# FIXED: saywb command - sends as bot with colored embed via webhook
 @bot.command()
 @not_blocked()
 async def saywb(ctx, *, args):
-    """Send a colored embed message as the bot: ,saywb [message] [color]"""
+    """Send a message as bot via webhook with color: ,saywb message [color]"""
     if not ctx.author.guild_permissions.manage_messages:
         await ctx.send("❌ You need Manage Messages permission to use this command.")
         return
     
-    # Parse arguments - last word could be color
-    parts = args.split()
-    if len(parts) < 1:
-        await ctx.send("❌ Usage: `,saywb [message] [color]`\nExample: `,saywb Hello world! red`")
-        return
+    # Parse arguments to separate message and color
+    parts = args.rsplit(' ', 1)  # Split from the right to get the last word as potential color
     
-    # Try to parse the last word as a color
-    color = discord.Color.default()
-    message_content = args
+    if len(parts) == 2:
+        message, potential_color = parts
+        # Check if the last part is a valid color
+        test_color = parse_color(potential_color)
+        if test_color != discord.Color.default() or potential_color.lower() in ['red', 'green', 'blue', 'yellow', 'purple', 'orange', 'pink', 'black', 'white', 'gray', 'grey', 'cyan', 'magenta', 'gold', 'silver']:
+            color = test_color
+        else:
+            # If not a valid color, treat the whole thing as message
+            message = args
+            color = discord.Color.default()
+    else:
+        message = args
+        color = discord.Color.default()
     
-    if len(parts) > 1:
-        potential_color = parts[-1]
-        parsed_color = parse_color(potential_color)
+    try:
+        webhook = await get_or_create_webhook(ctx.channel)
         
-        # If it successfully parsed a color (not default), use it and remove from message
-        if parsed_color != discord.Color.default() or potential_color.lower() in ['white', 'black', 'default']:
-            color = parsed_color
-            message_content = ' '.join(parts[:-1])
-    
-    # Create embed with the message and color
-    embed = discord.Embed(
-        description=message_content,
-        color=color
-    )
-    
-    embed.set_author(
-        name=ctx.author.display_name,
-        icon_url=ctx.author.display_avatar.url
-    )
-    
-    await ctx.message.delete()
-    await ctx.send(embed=embed)
+        # Create embed for the message
+        embed = discord.Embed(
+            description=message,
+            color=color
+        )
+        
+        # Send via webhook using bot's identity
+        await webhook.send(
+            embed=embed,
+            username=bot.user.display_name,
+            avatar_url=bot.user.display_avatar.url
+        )
+        await ctx.message.delete()
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to create webhooks in this channel.")
 
 @bot.command()
 @not_blocked()
