@@ -8,6 +8,10 @@ import re
 import math
 import difflib
 import time
+import asyncio
+import random
+from datetime import datetime, timedelta
+from typing import Optional, List, Union
 
 # Flask app to keep the bot running on Render
 app = Flask('')
@@ -144,6 +148,40 @@ def parse_color(color_str):
     
     return discord.Color.default()
 
+# Helper function to parse time string (e.g., "1h", "30m", "5d")
+def parse_time_string(time_str):
+    """Parse time string and return seconds"""
+    if not time_str:
+        return 0
+    
+    time_units = {
+        's': 1,
+        'm': 60,
+        'h': 3600,
+        'd': 86400,
+        'w': 604800
+    }
+    
+    # Extract number and unit
+    match = re.match(r'^(\d+)([smhdw])$', time_str.lower())
+    if match:
+        number, unit = match.groups()
+        return int(number) * time_units[unit]
+    
+    return 0
+
+# Helper function to format time duration
+def format_duration(seconds):
+    """Format seconds into readable duration"""
+    if seconds < 60:
+        return f"{seconds}s"
+    elif seconds < 3600:
+        return f"{seconds // 60}m"
+    elif seconds < 86400:
+        return f"{seconds // 3600}h"
+    else:
+        return f"{seconds // 86400}d"
+
 # Smart user finder function (like Dyno)
 def find_user_by_name(guild, search_term):
     """Find user by partial name match, similar to Dyno bot"""
@@ -193,6 +231,15 @@ channel_webhooks = {}
 
 # Store namelocked users: {user_id: locked_nickname}
 namelocked_users = {}
+
+# Store active giveaways: {message_id: giveaway_data}
+active_giveaways = {}
+
+# Store user message counts: {guild_id: {user_id: count}}
+user_message_counts = {}
+
+# Store giveaway host roles: {guild_id: [role_ids]}
+giveaway_host_roles = {}
 
 # ENHANCED: Increased storage capacity to support 100 pages
 MAX_MESSAGES = 100  # Increased from 10 to 100
@@ -279,6 +326,74 @@ async def get_or_create_webhook(channel):
     channel_webhooks[channel.id] = webhook
     return webhook
 
+# Helper function to count user messages
+def get_user_message_count(guild_id, user_id):
+    """Get message count for a user in a guild"""
+    if guild_id not in user_message_counts:
+        return 0
+    return user_message_counts[guild_id].get(user_id, 0)
+
+# Helper function to increment user message count
+def increment_user_message_count(guild_id, user_id):
+    """Increment message count for a user in a guild"""
+    if guild_id not in user_message_counts:
+        user_message_counts[guild_id] = {}
+    
+    if user_id not in user_message_counts[guild_id]:
+        user_message_counts[guild_id][user_id] = 0
+    
+    user_message_counts[guild_id][user_id] += 1
+
+# Helper function to check if user can host giveaways
+def can_host_giveaway(member):
+    """Check if a member can host giveaways"""
+    # Check if user is guild owner or administrator
+    if member.guild_permissions.administrator or member.id == member.guild.owner_id:
+        return True
+    
+    # Check if guild has giveaway host roles set
+    guild_id = member.guild.id
+    if guild_id not in giveaway_host_roles:
+        return False
+    
+    # Check if user has any of the giveaway host roles
+    user_role_ids = [role.id for role in member.roles]
+    return any(role_id in user_role_ids for role_id in giveaway_host_roles[guild_id])
+
+# Helper function to check if user meets giveaway requirements
+def check_giveaway_requirements(member, requirements, guild):
+    """Check if a member meets all giveaway requirements"""
+    if not requirements:
+        return True, []
+    
+    failed_requirements = []
+    
+    for req_type, req_value in requirements:
+        if req_type == "messages":
+            user_count = get_user_message_count(guild.id, member.id)
+            if user_count < req_value:
+                failed_requirements.append(f"Need {req_value} messages (has {user_count})")
+        
+        elif req_type == "role":
+            if not any(role.name.lower() == req_value.lower() for role in member.roles):
+                failed_requirements.append(f"Need role: {req_value}")
+        
+        elif req_type == "time-in-server":
+            if member.joined_at:
+                time_in_server = (datetime.utcnow() - member.joined_at.replace(tzinfo=None)).total_seconds()
+                if time_in_server < req_value:
+                    required_time = format_duration(req_value)
+                    actual_time = format_duration(int(time_in_server))
+                    failed_requirements.append(f"Need {required_time} in server (has {actual_time})")
+            else:
+                failed_requirements.append("Cannot verify join date")
+        
+        elif req_type == "roleblacklisted":
+            if any(role.name.lower() == req_value.lower() for role in member.roles):
+                failed_requirements.append(f"Cannot have role: {req_value}")
+    
+    return len(failed_requirements) == 0, failed_requirements
+
 # Custom check that allows administrators and owners to bypass permission requirements
 def has_permission_or_is_admin():
     async def predicate(ctx):
@@ -350,6 +465,14 @@ def check_moderator():
                 interaction.user.guild_permissions.ban_members)
     return app_commands.check(predicate)
 
+# Custom check for giveaway hosting
+def check_giveaway_host():
+    async def predicate(interaction: discord.Interaction):
+        if not interaction.guild:
+            return False
+        return can_host_giveaway(interaction.user)
+    return app_commands.check(predicate)
+
 # Custom check for specific user ID
 def is_specific_user():
     async def predicate(ctx):
@@ -360,6 +483,138 @@ def check_specific_user():
     async def predicate(interaction: discord.Interaction):
         return interaction.user.id == 776883692983156736
     return app_commands.check(predicate)
+
+# Giveaway Join View
+class GiveawayView(discord.ui.View):
+    def __init__(self, giveaway_data):
+        super().__init__(timeout=None)
+        self.giveaway_data = giveaway_data
+    
+    @discord.ui.button(label="🎉 Join Giveaway", style=discord.ButtonStyle.primary, custom_id="join_giveaway")
+    async def join_giveaway(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user = interaction.user
+        guild = interaction.guild
+        
+        # Check if user already joined
+        if user.id in self.giveaway_data.get('participants', []):
+            await interaction.response.send_message("❌ You've already joined this giveaway!", ephemeral=True)
+            return
+        
+        # Check requirements
+        requirements = self.giveaway_data.get('requirements', [])
+        meets_reqs, failed_reqs = check_giveaway_requirements(user, requirements, guild)
+        
+        if not meets_reqs:
+            failed_text = "\n".join(f"• {req}" for req in failed_reqs)
+            embed = discord.Embed(
+                title="❌ Requirements Not Met",
+                description=f"You don't meet the following requirements:\n{failed_text}",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Add user to participants
+        if 'participants' not in self.giveaway_data:
+            self.giveaway_data['participants'] = []
+        self.giveaway_data['participants'].append(user.id)
+        
+        await interaction.response.send_message("✅ Successfully joined the giveaway! Good luck!", ephemeral=True)
+
+# Giveaway Participants Pagination View
+class GiveawayParticipantsPaginationView(discord.ui.View):
+    def __init__(self, participants, giveaway_data, guild, timeout=300):
+        super().__init__(timeout=timeout)
+        self.participants = participants
+        self.giveaway_data = giveaway_data
+        self.guild = guild
+        self.current_page = 0
+        self.participants_per_page = 10
+        self.total_pages = math.ceil(len(participants) / self.participants_per_page)
+        
+        # Update button states
+        self.update_buttons()
+    
+    def update_buttons(self):
+        # Update button states based on current page
+        self.previous_button.disabled = self.current_page == 0
+        self.next_button.disabled = self.current_page >= self.total_pages - 1
+        self.go_to_page_button.disabled = self.total_pages <= 1
+    
+    def get_embed(self):
+        # Calculate start and end indices for current page
+        start_idx = self.current_page * self.participants_per_page
+        end_idx = min(start_idx + self.participants_per_page, len(self.participants))
+        page_participants = self.participants[start_idx:end_idx]
+        
+        # Create embed
+        embed = discord.Embed(
+            title=f"Giveaway Participants (Page {self.current_page + 1}/{self.total_pages})",
+            description=f"These are the members that have participated in the giveaway of **{self.giveaway_data['prize']}**:",
+            color=discord.Color.blue()
+        )
+        
+        # Build numbered list of participants
+        participant_list = []
+        for i, user_id in enumerate(page_participants, start=start_idx + 1):
+            member = self.guild.get_member(user_id)
+            if member:
+                # Format like: "1. @leaf | @ for help (1 entry)"
+                entry_count = self.giveaway_data.get('participant_entries', {}).get(str(user_id), 1)
+                participant_list.append(f"{i}. @{member.display_name} | @{member.name} ({entry_count} entry)")
+            else:
+                participant_list.append(f"{i}. <@{user_id}> (1 entry)")
+        
+        if participant_list:
+            embed.add_field(
+                name="Participants",
+                value="\n".join(participant_list),
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="No Participants",
+                value="No one has joined this giveaway yet.",
+                inline=False
+            )
+        
+        embed.add_field(
+            name="Total Participants",
+            value=str(len(self.participants)),
+            inline=True
+        )
+        
+        # Add page information
+        embed.set_footer(
+            text=f"Page {self.current_page + 1} of {self.total_pages} | Made with ❤ | Werrzzzy"
+        )
+        
+        return embed
+    
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary)
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_buttons()
+            embed = self.get_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+    
+    @discord.ui.button(label="Go To Page", style=discord.ButtonStyle.secondary)
+    async def go_to_page_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # This would need a modal for page input, keeping it simple for now
+        await interaction.response.defer()
+    
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            self.update_buttons()
+            embed = self.get_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
 
 # REGULAR Pagination View for ,sp (FILTERED CONTENT - ALL MESSAGES)
 class RegularSnipePaginationView(discord.ui.View):
@@ -539,6 +794,20 @@ async def on_ready():
         print(f"Failed to sync commands: {e}")
     print(f"Bot is online as {bot.user}!")
     await bot.change_presence(activity=discord.Game(name="Type /help or ,help for commands"))
+    
+    # Start giveaway task
+    bot.loop.create_task(giveaway_task())
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+    
+    # Count user messages for giveaway requirements
+    if message.guild:
+        increment_user_message_count(message.guild.id, message.author.id)
+    
+    await bot.process_commands(message)
 
 @bot.event
 async def on_message_delete(message):
@@ -620,11 +889,86 @@ async def on_member_update(before, after):
                 except Exception:
                     pass  # Other errors
 
+# Background task to handle giveaway endings
+async def giveaway_task():
+    """Background task to check and end giveaways"""
+    while True:
+        try:
+            current_time = datetime.utcnow()
+            ended_giveaways = []
+            
+            for message_id, giveaway_data in active_giveaways.items():
+                if current_time >= giveaway_data['end_time']:
+                    ended_giveaways.append(message_id)
+            
+            for message_id in ended_giveaways:
+                await end_giveaway_automatically(message_id)
+            
+            await asyncio.sleep(10)  # Check every 10 seconds
+        except Exception as e:
+            print(f"Error in giveaway task: {e}")
+            await asyncio.sleep(30)
+
+async def end_giveaway_automatically(message_id):
+    """Automatically end a giveaway"""
+    try:
+        if message_id not in active_giveaways:
+            return
+        
+        giveaway_data = active_giveaways[message_id]
+        channel = bot.get_channel(giveaway_data['channel_id'])
+        if not channel:
+            return
+        
+        try:
+            message = await channel.fetch_message(message_id)
+        except discord.NotFound:
+            del active_giveaways[message_id]
+            return
+        
+        participants = giveaway_data.get('participants', [])
+        winners_count = giveaway_data.get('winners', 1)
+        
+        # Select winners
+        if participants:
+            winners = random.sample(participants, min(winners_count, len(participants)))
+            winner_mentions = [f"<@{winner}>" for winner in winners]
+            
+            # Create winner announcement embed
+            embed = discord.Embed(
+                title="🎉 Giveaway Ended!",
+                description=f"**Prize:** {giveaway_data['prize']}\n\n**Winner(s):** {', '.join(winner_mentions)}",
+                color=discord.Color.gold()
+            )
+        else:
+            embed = discord.Embed(
+                title="🎉 Giveaway Ended!",
+                description=f"**Prize:** {giveaway_data['prize']}\n\n**Winner:** No participants",
+                color=discord.Color.red()
+            )
+            winner_mentions = []
+        
+        embed.add_field(name="Total Participants", value=str(len(participants)), inline=True)
+        embed.add_field(name="Ended at", value=f"<t:{int(datetime.utcnow().timestamp())}:F>", inline=True)
+        embed.set_footer(text="Congratulations to the winner(s)!")
+        
+        await message.edit(embed=embed, view=None)
+        
+        # Send winner announcement
+        if winner_mentions:
+            await channel.send(f"🎉 Congratulations {', '.join(winner_mentions)}! You won **{giveaway_data['prize']}**!")
+        
+        # Remove from active giveaways
+        del active_giveaways[message_id]
+        
+    except Exception as e:
+        print(f"Error ending giveaway {message_id}: {e}")
+
 # ========== SLASH COMMANDS ==========
 
 @bot.tree.command(name="snipe", description="Displays the most recently deleted message")
-@app_commands.describe(page="Page number (1-100)", channel="Channel to check (optional)")
-async def snipe_slash(interaction: discord.Interaction, page: int = 1, channel: discord.TextChannel = None):
+@app_commands.describe(page="Page number (1-100)", channel="Channel or thread to check (optional)")
+async def snipe_slash(interaction: discord.Interaction, page: int = 1, channel: Union[discord.TextChannel, discord.Thread] = None):
     target_channel = channel or interaction.channel
     
     if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
@@ -670,29 +1014,8 @@ async def snipe_slash(interaction: discord.Interaction, page: int = 1, channel: 
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="sp", description="Display a paginated list of deleted messages")
-@app_commands.describe(channel="Channel to check (optional)")
-async def sp_slash(interaction: discord.Interaction, channel: discord.TextChannel = None):
-    target_channel = channel or interaction.channel
-    
-    if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
-        await interaction.response.send_message(f"No recently deleted messages in {target_channel.mention}.", ephemeral=True)
-        return
-
-    # Reverse the messages to show newest first
-    messages = list(reversed(sniped_messages[target_channel.id]))
-    
-    # Use REGULAR pagination view (filtered content)
-    view = RegularSnipePaginationView(messages, target_channel)
-    embed = view.get_embed()
-    
-    # Update embed title to show channel
-    embed.title = f"📜 Deleted Messages List - {target_channel.name}"
-    
-    await interaction.response.send_message(embed=embed, view=view)
-
-@bot.tree.command(name="snipepages", description="Display a paginated list of deleted messages")
-@app_commands.describe(channel="Channel to check (optional)")
-async def snipepages_slash(interaction: discord.Interaction, channel: discord.TextChannel = None):
+@app_commands.describe(channel="Channel or thread to check (optional)")
+async def sp_slash(interaction: discord.Interaction, channel: Union[discord.TextChannel, discord.Thread] = None):
     target_channel = channel or interaction.channel
     
     if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
@@ -712,9 +1035,9 @@ async def snipepages_slash(interaction: discord.Interaction, channel: discord.Te
     await interaction.response.send_message(embed=embed, view=view)
 
 @bot.tree.command(name="spforce", description="Display unfiltered offensive messages only (mod only)")
-@app_commands.describe(channel="Channel to check (optional)")
+@app_commands.describe(channel="Channel or thread to check (optional)")
 @check_moderator()
-async def spforce_slash(interaction: discord.Interaction, channel: discord.TextChannel = None):
+async def spforce_slash(interaction: discord.Interaction, channel: Union[discord.TextChannel, discord.Thread] = None):
     target_channel = channel or interaction.channel
     
     if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
@@ -736,305 +1059,384 @@ async def spforce_slash(interaction: discord.Interaction, channel: discord.TextC
     embed = view.get_embed()
     
     # Update embed title to show channel
-    embed.title = f"🔒 Moderator Snipe Pages (Unfiltered) - {target_channel.name}"
+    embed.title = f"🔒 Moderator Snipe Pages - {target_channel.name} (Unfiltered)"
     
     await interaction.response.send_message(embed=embed, view=view)
 
-# NEW: /spf shortcut for spforce
-@bot.tree.command(name="spf", description="Shortcut for spforce - Display unfiltered offensive messages only (mod only)")
-@app_commands.describe(channel="Channel to check (optional)")
-@check_moderator()
-async def spf_slash(interaction: discord.Interaction, channel: discord.TextChannel = None):
-    await spforce_slash(interaction, channel)
-
-@bot.tree.command(name="say", description="Make the bot say something (mod only)")
-@app_commands.describe(message="The message for the bot to say")
-@check_moderator()
-async def say_slash(interaction: discord.Interaction, message: str):
-    await interaction.response.send_message("Message sent!", ephemeral=True)
-    await interaction.followup.send(message)
-
-# NEW: /saywb webhook command
-@bot.tree.command(name="saywb", description="Make the bot say something using webhook (mod only)")
-@app_commands.describe(
-    message="The message for the bot to say",
-    color="Optional color (hex code, color name, or 3/6 digit hex)"
-)
-@check_moderator()
-async def saywb_slash(interaction: discord.Interaction, message: str, color: str = None):
+@bot.tree.command(name="namelock", description="Lock a user's nickname")
+@app_commands.describe(user="User to namelock", nickname="Nickname to lock them to")
+@check_admin_or_permissions(manage_nicknames=True)
+async def namelock_slash(interaction: discord.Interaction, user: discord.Member, nickname: str):
+    if len(nickname) > 32:
+        await interaction.response.send_message("❌ Nickname must be 32 characters or less.", ephemeral=True)
+        return
+    
     try:
-        # Get or create webhook
+        await user.edit(nick=nickname, reason=f"Namelocked by {interaction.user}")
+        namelocked_users[user.id] = nickname
+        
+        embed = discord.Embed(
+            title="✅ User Namelocked",
+            description=f"{user.mention} has been namelocked to `{nickname}`",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to change this user's nickname.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="nl", description="Lock a user's nickname (short for namelock)")
+@app_commands.describe(user="User to namelock", nickname="Nickname to lock them to")
+@check_admin_or_permissions(manage_nicknames=True)
+async def nl_slash(interaction: discord.Interaction, user: discord.Member, nickname: str):
+    await namelock_slash(interaction, user, nickname)
+
+@bot.tree.command(name="unl", description="Unlock a user's nickname")
+@app_commands.describe(user="User to unlock")
+@check_admin_or_permissions(manage_nicknames=True)
+async def unl_slash(interaction: discord.Interaction, user: discord.Member):
+    if user.id not in namelocked_users:
+        await interaction.response.send_message("❌ This user is not namelocked.", ephemeral=True)
+        return
+    
+    del namelocked_users[user.id]
+    
+    embed = discord.Embed(
+        title="✅ User Unlocked",
+        description=f"{user.mention} can now change their nickname freely",
+        color=discord.Color.green()
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="rename", description="Rename a user")
+@app_commands.describe(user="User to rename", nickname="New nickname")
+@check_admin_or_permissions(manage_nicknames=True)
+async def rename_slash(interaction: discord.Interaction, user: discord.Member, nickname: str):
+    if len(nickname) > 32:
+        await interaction.response.send_message("❌ Nickname must be 32 characters or less.", ephemeral=True)
+        return
+    
+    old_nick = user.display_name
+    
+    try:
+        await user.edit(nick=nickname, reason=f"Renamed by {interaction.user}")
+        
+        embed = discord.Embed(
+            title="✅ User Renamed",
+            description=f"{user.mention} renamed from `{old_nick}` to `{nickname}`",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to change this user's nickname.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="re", description="Rename a user (short for rename)")
+@app_commands.describe(user="User to rename", nickname="New nickname")
+@check_admin_or_permissions(manage_nicknames=True)
+async def re_slash(interaction: discord.Interaction, user: discord.Member, nickname: str):
+    await rename_slash(interaction, user, nickname)
+
+@bot.tree.command(name="message", description="Send a message as the bot")
+@app_commands.describe(content="Message to send")
+@check_moderator()
+async def message_slash(interaction: discord.Interaction, content: str):
+    await interaction.response.send_message(content)
+
+@bot.tree.command(name="mess", description="Send a message as the bot (short for message)")
+@app_commands.describe(content="Message to send")
+@check_moderator()
+async def mess_slash(interaction: discord.Interaction, content: str):
+    await message_slash(interaction, content)
+
+@bot.tree.command(name="saywb", description="Send a message via webhook with custom color")
+@app_commands.describe(color="Color (hex, name, or default)", content="Message content")
+@check_moderator()
+async def saywb_slash(interaction: discord.Interaction, color: str, content: str):
+    try:
         webhook = await get_or_create_webhook(interaction.channel)
         
-        # Parse color
-        embed_color = parse_color(color) if color else discord.Color.default()
+        embed_color = parse_color(color)
+        embed = discord.Embed(description=content, color=embed_color)
         
-        # Create embed
-        embed = discord.Embed(description=message, color=embed_color)
-        
-        # Send via webhook
-        await webhook.send(embed=embed, username="SnipeBot", avatar_url=bot.user.avatar.url if bot.user.avatar else None)
-        
-        await interaction.response.send_message("Webhook message sent!", ephemeral=True)
-        
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ I don't have permission to manage webhooks in this channel.", ephemeral=True)
+        await webhook.send(embed=embed, username="SnipeBot", avatar_url=bot.user.display_avatar.url)
+        await interaction.response.send_message("✅ Message sent via webhook!", ephemeral=True)
     except Exception as e:
-        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Error sending webhook: {str(e)}", ephemeral=True)
 
-@bot.tree.command(name="rename", description="Change someone's nickname (requires manage nicknames)")
-@app_commands.describe(member="The member to rename", new_nickname="The new nickname")
-@check_admin_or_permissions(manage_nicknames=True)
-async def rename_slash(interaction: discord.Interaction, member: discord.Member, new_nickname: str):
-    try:
-        old_nick = member.display_name
-        await member.edit(nick=new_nickname)
-        embed = discord.Embed(title="✅ Nickname Changed", color=discord.Color.green())
-        embed.add_field(name="Member", value=member.mention, inline=True)
-        embed.add_field(name="Old Nickname", value=old_nick, inline=True)
-        embed.add_field(name="New Nickname", value=new_nickname, inline=True)
-        embed.set_footer(text="Made with ❤ | Werrzzzy")
-        await interaction.response.send_message(embed=embed)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ I don't have permission to change this user's nickname.", ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+# ========== GIVEAWAY COMMANDS ==========
 
-# NEW: /re shortcut for rename
-@bot.tree.command(name="re", description="Shortcut for rename - Change someone's nickname (requires manage nicknames)")
-@app_commands.describe(member="The member to rename", new_nickname="The new nickname")
-@check_admin_or_permissions(manage_nicknames=True)
-async def re_slash(interaction: discord.Interaction, member: discord.Member, new_nickname: str):
-    await rename_slash(interaction, member, new_nickname)
-
-@bot.tree.command(name="message", description="Send a message to a user (mod only)")
-@app_commands.describe(user_search="Username or partial name to find", message="The message to send")
-@check_moderator()
-async def message_slash(interaction: discord.Interaction, user_search: str, message: str):
-    try:
-        # Try to find user by ID first
-        try:
-            user = bot.get_user(int(user_search))
-        except ValueError:
-            user = None
-        
-        # If not found by ID, search by name
-        if not user:
-            user = find_user_by_name(interaction.guild, user_search)
-        
-        if not user:
-            await interaction.response.send_message(f"❌ No user found matching '{user_search}'.", ephemeral=True)
-            return
-        
-        # Send simple message (no embed/webhook design)
-        await user.send(message)
-        await interaction.response.send_message(f"✅ Message sent to {user.display_name}!", ephemeral=True)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ Could not send message to this user (they may have DMs disabled).", ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
-
-# NEW: /mess shortcut for message
-@bot.tree.command(name="mess", description="Shortcut for message - Send a message to a user (mod only)")
-@app_commands.describe(user_search="Username or partial name to find", message="The message to send")
-@check_moderator()
-async def mess_slash(interaction: discord.Interaction, user_search: str, message: str):
-    await message_slash(interaction, user_search, message)
-
-# NEW: Namelock commands
-@bot.tree.command(name="namelock", description="Lock a user's nickname (mod only)")
-@app_commands.describe(member="The member to namelock", nickname="The nickname to lock them to")
-@check_admin_or_permissions(manage_nicknames=True)
-async def namelock_slash(interaction: discord.Interaction, member: discord.Member, nickname: str):
-    try:
-        # Set the nickname first
-        old_nick = member.display_name
-        await member.edit(nick=nickname)
-        
-        # Add to namelock dictionary
-        namelocked_users[member.id] = nickname
-        
-        embed = discord.Embed(title="🔒 Nickname Locked", color=discord.Color.orange())
-        embed.add_field(name="Member", value=member.mention, inline=True)
-        embed.add_field(name="Old Nickname", value=old_nick, inline=True)
-        embed.add_field(name="Locked Nickname", value=nickname, inline=True)
-        embed.add_field(name="Note", value="User cannot change their nickname until unlocked.", inline=False)
-        embed.set_footer(text="Made with ❤ | Werrzzzy")
-        await interaction.response.send_message(embed=embed)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ I don't have permission to change this user's nickname.", ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
-
-# NEW: /nl shortcut for namelock
-@bot.tree.command(name="nl", description="Shortcut for namelock - Lock a user's nickname (mod only)")
-@app_commands.describe(member="The member to namelock", nickname="The nickname to lock them to")
-@check_admin_or_permissions(manage_nicknames=True)
-async def nl_slash(interaction: discord.Interaction, member: discord.Member, nickname: str):
-    await namelock_slash(interaction, member, nickname)
-
-@bot.tree.command(name="unl", description="Unlock a user's nickname (mod only)")
-@app_commands.describe(member="The member to unlock")
-@check_admin_or_permissions(manage_nicknames=True)
-async def unl_slash(interaction: discord.Interaction, member: discord.Member):
-    if member.id in namelocked_users:
-        locked_nickname = namelocked_users[member.id]
-        del namelocked_users[member.id]
-        
-        embed = discord.Embed(title="🔓 Nickname Unlocked", color=discord.Color.green())
-        embed.add_field(name="Member", value=member.mention, inline=True)
-        embed.add_field(name="Was Locked To", value=locked_nickname, inline=True)
-        embed.add_field(name="Note", value="User can now change their nickname freely.", inline=False)
-        embed.set_footer(text="Made with ❤ | Werrzzzy")
-        await interaction.response.send_message(embed=embed)
-    else:
-        await interaction.response.send_message(f"❌ {member.display_name} is not namelocked.", ephemeral=True)
-
-@bot.tree.command(name="clear", description="Clear all sniped messages (admin only)")
-@check_admin_or_permissions(manage_messages=True)
-async def clear_slash(interaction: discord.Interaction):
-    channel = interaction.channel
-    snipe_count = len(sniped_messages.get(channel.id, []))
-    edit_count = len(edited_messages.get(channel.id, []))
+@bot.tree.command(name="giveaway", description="Create a giveaway with requirements")
+@app_commands.describe(
+    prize="What the winner will receive",
+    duration="How long the giveaway runs (e.g., 1h, 30m, 2d)",
+    winners="Number of winners (default: 1)",
+    requirements="Requirements (e.g., 'messages 50, role @Member, time-in-server 1d')",
+    channel="Channel to post the giveaway (optional)"
+)
+@check_giveaway_host()
+async def giveaway_slash(interaction: discord.Interaction, prize: str, duration: str, winners: int = 1, requirements: str = None, channel: Union[discord.TextChannel, discord.Thread] = None):
+    target_channel = channel or interaction.channel
     
-    if channel.id in sniped_messages:
-        sniped_messages[channel.id] = []
-    if channel.id in edited_messages:
-        edited_messages[channel.id] = []
-    
-    embed = discord.Embed(title="✅ Messages Cleared", color=discord.Color.green())
-    embed.add_field(name="Deleted Messages Cleared", value=str(snipe_count), inline=True)
-    embed.add_field(name="Edited Messages Cleared", value=str(edit_count), inline=True)
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="editsnipe", description="Display the most recently edited message")
-@app_commands.describe(page="Page number (1-100)")
-async def editsnipe_slash(interaction: discord.Interaction, page: int = 1):
-    channel = interaction.channel
-    if channel.id not in edited_messages or not edited_messages[channel.id]:
-        await interaction.response.send_message("No recently edited messages in this channel.", ephemeral=True)
+    # Parse duration
+    duration_seconds = parse_time_string(duration)
+    if duration_seconds == 0:
+        await interaction.response.send_message("❌ Invalid duration format. Use format like: 1h, 30m, 2d", ephemeral=True)
         return
-
-    if page < 1 or page > len(edited_messages[channel.id]):
-        await interaction.response.send_message(f"Page must be between 1 and {len(edited_messages[channel.id])}.", ephemeral=True)
+    
+    if winners < 1 or winners > 20:
+        await interaction.response.send_message("❌ Number of winners must be between 1 and 20.", ephemeral=True)
         return
-
-    edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
     
-    # Filter content if it contains offensive words
-    before_content = edit['before_content'] or "*No text content*"
-    after_content = edit['after_content'] or "*No text content*"
+    # Parse requirements
+    parsed_requirements = []
+    if requirements:
+        req_parts = [req.strip() for req in requirements.split(',')]
+        for req in req_parts:
+            req = req.strip()
+            if req.startswith('messages '):
+                try:
+                    msg_count = int(req.split()[1])
+                    parsed_requirements.append(('messages', msg_count))
+                except (IndexError, ValueError):
+                    await interaction.response.send_message(f"❌ Invalid messages requirement: {req}", ephemeral=True)
+                    return
+            elif req.startswith('role '):
+                role_name = req[5:].strip().lstrip('@')
+                parsed_requirements.append(('role', role_name))
+            elif req.startswith('time-in-server '):
+                time_str = req.split()[1]
+                time_seconds = parse_time_string(time_str)
+                if time_seconds == 0:
+                    await interaction.response.send_message(f"❌ Invalid time format: {time_str}", ephemeral=True)
+                    return
+                parsed_requirements.append(('time-in-server', time_seconds))
+            elif req.startswith('roleblacklisted '):
+                role_name = req[15:].strip().lstrip('@')
+                parsed_requirements.append(('roleblacklisted', role_name))
     
-    if edit.get('before_has_offensive_content', False):
-        before_content = filter_content(before_content)
-    if edit.get('after_has_offensive_content', False):
-        after_content = filter_content(after_content)
+    # Calculate end time
+    end_time = datetime.utcnow() + timedelta(seconds=duration_seconds)
     
-    embed.add_field(name="**Before:**", value=before_content, inline=False)
-    embed.add_field(name="**After:**", value=after_content, inline=False)
-    embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
-    embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
-    
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="manage", description="View bot management info")
-async def manage_slash(interaction: discord.Interaction):
-    embed = discord.Embed(title="🤖 Bot Management", color=discord.Color.blurple())
-    embed.add_field(name="Bot Owner", value="<@776883692983156736>", inline=True)
-    embed.add_field(name="Bot ID", value=str(bot.user.id), inline=True)
-    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="ping", description="Check bot latency")
-async def ping_slash(interaction: discord.Interaction):
-    latency = round(bot.latency * 1000)
-    embed = discord.Embed(title="🏓 Pong!", color=discord.Color.green())
-    embed.add_field(name="Latency", value=f"{latency}ms", inline=True)
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await interaction.response.send_message(embed=embed)
-
-# NEW: /time command (restricted to specific user)
-@bot.tree.command(name="time", description="Show bot uptime (restricted access)")
-@check_specific_user()
-async def time_slash(interaction: discord.Interaction):
-    current_time = time.time()
-    uptime_seconds = current_time - BOT_START_TIME
-    uptime_formatted = format_uptime(uptime_seconds)
-    
-    embed = discord.Embed(title="⏰ Bot Uptime", color=discord.Color.blue())
-    embed.add_field(name="Uptime", value=uptime_formatted, inline=False)
-    embed.add_field(name="Exact Seconds", value=f"{int(uptime_seconds)} seconds", inline=False)
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-# ========== PREFIX COMMANDS ==========
-
-# UPDATED HELP COMMAND with proper spacing and organization
-@bot.command(name="help")
-async def help_command(ctx):
-    """Display bot commands help"""
+    # Create embed
     embed = discord.Embed(
-        title="🤖 SnipeBot Commands",
-        description="*A Discord bot for tracking deleted and edited messages with content filtering.*",
+        title="🎉 GIVEAWAY 🎉",
+        description=f"**Prize:** {prize}",
         color=discord.Color.blue()
     )
     
-    # Snipe Commands
-    embed.add_field(
-        name="📜 Snipe Commands",
-        value=(
-            "` ,snipe [page]` — View a deleted message\n"
-            "` ,s [page]` — Shortcut for ,snipe\n"
-            "` ,sp` — View all deleted message pages\n"
-            "` ,snipepages` — Same as ,sp\n"
-            "` ,spforce` — View unfiltered deleted messages (Mods only)"
-        ),
-        inline=False
-    )
+    embed.add_field(name="Winners", value=str(winners), inline=True)
+    embed.add_field(name="Ends", value=f"<t:{int(end_time.timestamp())}:R>", inline=True)
+    embed.add_field(name="Hosted by", value=interaction.user.mention, inline=True)
     
-    # Edit Snipe Commands
-    embed.add_field(
-        name="✏️ Edit Snipe Commands",
-        value=(
-            "` ,editsnipe [page]` — View an edited message\n"
-            "` ,es [page]` — Shortcut for ,editsnipe"
-        ),
-        inline=False
-    )
+    if parsed_requirements:
+        req_text = []
+        for req_type, req_value in parsed_requirements:
+            if req_type == "messages":
+                req_text.append(f"• At least {req_value} messages in server")
+            elif req_type == "role":
+                req_text.append(f"• Must have role: {req_value}")
+            elif req_type == "time-in-server":
+                req_text.append(f"• Must be in server for: {format_duration(req_value)}")
+            elif req_type == "roleblacklisted":
+                req_text.append(f"• Cannot have role: {req_value}")
+        
+        embed.add_field(name="Requirements", value="\n".join(req_text), inline=False)
     
-    # Moderation Commands
-    embed.add_field(
-        name="🛡️ Moderation Commands (Mods only)",
-        value=(
-            "` ,say <message>` — Make the bot send a message\n"
-            "` ,message <user> <msg>` — Send a DM to a user\n"
-            "` ,rename <user> <nickname>` — Change a user's nickname\n"
-            "` ,clear` — Clear all sniped messages"
-        ),
-        inline=False
-    )
+    embed.set_footer(text="Click the button below to join!")
+    
+    # Create giveaway data
+    giveaway_data = {
+        'prize': prize,
+        'host_id': interaction.user.id,
+        'channel_id': target_channel.id,
+        'end_time': end_time,
+        'winners': winners,
+        'requirements': parsed_requirements,
+        'participants': []
+    }
+    
+    # Send message with view
+    view = GiveawayView(giveaway_data)
+    
+    await interaction.response.send_message(embed=embed, view=view)
+    message = await interaction.original_response()
+    
+    # Store giveaway data
+    active_giveaways[message.id] = giveaway_data
 
-    # Management Commands
-    embed.add_field(
-        name="👨‍💻 Management Commands",
-        value=(
-            "` ,manage` — View bot management info\n"
-            "` ,ping` — Check bot latency\n"
-            "` ,help` — Show this command list"
-        ),
-        inline=False
-    )
+@bot.tree.command(name="giveawaylist", description="List participants of a giveaway")
+@app_commands.describe(message_id="ID of the giveaway message")
+async def giveawaylist_slash(interaction: discord.Interaction, message_id: str):
+    try:
+        msg_id = int(message_id)
+    except ValueError:
+        await interaction.response.send_message("❌ Invalid message ID.", ephemeral=True)
+        return
     
-    embed.set_footer(text="Made with ❤ by Werrzzzy")
-    await ctx.send(embed=embed)
+    if msg_id not in active_giveaways:
+        await interaction.response.send_message("❌ Giveaway not found or already ended.", ephemeral=True)
+        return
+    
+    giveaway_data = active_giveaways[msg_id]
+    participants = giveaway_data.get('participants', [])
+    
+    if not participants:
+        embed = discord.Embed(
+            title="Giveaway Participants",
+            description=f"No one has joined the giveaway of **{giveaway_data['prize']}** yet.",
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+    
+    # Create pagination view
+    view = GiveawayParticipantsPaginationView(participants, giveaway_data, interaction.guild)
+    embed = view.get_embed()
+    
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-@bot.command(name="snipe")
-async def snipe_command(ctx, page: int = 1, channel: discord.TextChannel = None):
-    """Display a sniped message by page number"""
+@bot.tree.command(name="giveawayremove", description="Remove a user from a giveaway")
+@app_commands.describe(message_id="ID of the giveaway message", user="User to remove from giveaway")
+@check_giveaway_host()
+async def giveawayremove_slash(interaction: discord.Interaction, message_id: str, user: discord.Member):
+    try:
+        msg_id = int(message_id)
+    except ValueError:
+        await interaction.response.send_message("❌ Invalid message ID.", ephemeral=True)
+        return
+    
+    if msg_id not in active_giveaways:
+        await interaction.response.send_message("❌ Giveaway not found or already ended.", ephemeral=True)
+        return
+    
+    giveaway_data = active_giveaways[msg_id]
+    
+    # Check if user is the host or has permission
+    if (interaction.user.id != giveaway_data['host_id'] and 
+        not interaction.user.guild_permissions.administrator and
+        interaction.user.id != interaction.guild.owner_id):
+        await interaction.response.send_message("❌ You can only remove participants from your own giveaways.", ephemeral=True)
+        return
+    
+    participants = giveaway_data.get('participants', [])
+    
+    if user.id not in participants:
+        await interaction.response.send_message(f"❌ {user.mention} is not participating in this giveaway.", ephemeral=True)
+        return
+    
+    # Remove user
+    participants.remove(user.id)
+    
+    embed = discord.Embed(
+        title="✅ User Removed",
+        description=f"{user.mention} has been removed from the giveaway of **{giveaway_data['prize']}**",
+        color=discord.Color.green()
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="giveawayreroll", description="Reroll winners of a giveaway")
+@app_commands.describe(message_id="ID of the giveaway message")
+@check_giveaway_host()
+async def giveawayreroll_slash(interaction: discord.Interaction, message_id: str):
+    try:
+        msg_id = int(message_id)
+    except ValueError:
+        await interaction.response.send_message("❌ Invalid message ID.", ephemeral=True)
+        return
+    
+    if msg_id not in active_giveaways:
+        await interaction.response.send_message("❌ Giveaway not found. Note: Only active giveaways can be rerolled.", ephemeral=True)
+        return
+    
+    giveaway_data = active_giveaways[msg_id]
+    
+    # Check if user is the host or has permission
+    if (interaction.user.id != giveaway_data['host_id'] and 
+        not interaction.user.guild_permissions.administrator and
+        interaction.user.id != interaction.guild.owner_id):
+        await interaction.response.send_message("❌ You can only reroll your own giveaways.", ephemeral=True)
+        return
+    
+    participants = giveaway_data.get('participants', [])
+    winners_count = giveaway_data.get('winners', 1)
+    
+    if not participants:
+        await interaction.response.send_message("❌ No participants to reroll.", ephemeral=True)
+        return
+    
+    # Select new winners
+    winners = random.sample(participants, min(winners_count, len(participants)))
+    winner_mentions = [f"<@{winner}>" for winner in winners]
+    
+    embed = discord.Embed(
+        title="🎉 Giveaway Rerolled!",
+        description=f"**Prize:** {giveaway_data['prize']}\n\n**New Winner(s):** {', '.join(winner_mentions)}",
+        color=discord.Color.gold()
+    )
+    embed.add_field(name="Rerolled by", value=interaction.user.mention, inline=True)
+    
+    await interaction.response.send_message(embed=embed)
+    
+    # Send winner announcement
+    await interaction.followup.send(f"🎉 Congratulations {', '.join(winner_mentions)}! You won **{giveaway_data['prize']}** (Reroll)!")
+
+@bot.tree.command(name="giveawayend", description="End a giveaway early")
+@app_commands.describe(message_id="ID of the giveaway message")
+@check_giveaway_host()
+async def giveawayend_slash(interaction: discord.Interaction, message_id: str):
+    try:
+        msg_id = int(message_id)
+    except ValueError:
+        await interaction.response.send_message("❌ Invalid message ID.", ephemeral=True)
+        return
+    
+    if msg_id not in active_giveaways:
+        await interaction.response.send_message("❌ Giveaway not found or already ended.", ephemeral=True)
+        return
+    
+    giveaway_data = active_giveaways[msg_id]
+    
+    # Check if user is the host or has permission
+    if (interaction.user.id != giveaway_data['host_id'] and 
+        not interaction.user.guild_permissions.administrator and
+        interaction.user.id != interaction.guild.owner_id):
+        await interaction.response.send_message("❌ You can only end your own giveaways.", ephemeral=True)
+        return
+    
+    # End the giveaway
+    await end_giveaway_automatically(msg_id)
+    
+    await interaction.response.send_message("✅ Giveaway ended successfully!", ephemeral=True)
+
+@bot.tree.command(name="giveawayhost", description="Set roles that can host giveaways")
+@app_commands.describe(role="Role to add as giveaway host")
+@check_admin_or_permissions(administrator=True)
+async def giveawayhost_slash(interaction: discord.Interaction, role: discord.Role):
+    guild_id = interaction.guild.id
+    
+    if guild_id not in giveaway_host_roles:
+        giveaway_host_roles[guild_id] = []
+    
+    if role.id in giveaway_host_roles[guild_id]:
+        await interaction.response.send_message(f"❌ {role.mention} is already a giveaway host role.", ephemeral=True)
+        return
+    
+    giveaway_host_roles[guild_id].append(role.id)
+    
+    embed = discord.Embed(
+        title="✅ Giveaway Host Role Added",
+        description=f"{role.mention} can now host giveaways",
+        color=discord.Color.green()
+    )
+    await interaction.response.send_message(embed=embed)
+
+# ========== PREFIX COMMANDS ==========
+
+@bot.command(name="snipe", aliases=["s"])
+async def snipe_prefix(ctx, page: int = 1, channel: Union[discord.TextChannel, discord.Thread] = None):
     target_channel = channel or ctx.channel
     
     if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
@@ -1055,16 +1457,15 @@ async def snipe_command(ctx, page: int = 1, channel: discord.TextChannel = None)
     
     embed.add_field(name="**Content:**", value=content, inline=False)
     
-    # Show who deleted the message - if same person or can't detect, show author name
+    # Show who deleted the message
     deleted_by = snipe.get('deleted_by', snipe['author'])
     embed.add_field(name="**Deleted by:**", value=deleted_by.display_name, inline=True)
     
     embed.add_field(name="**Time:**", value=snipe['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    if channel:
-        embed.add_field(name="**Channel:**", value=target_channel.mention, inline=True)
+    embed.add_field(name="**Channel:**", value=target_channel.mention, inline=True)
     embed.set_footer(text=f"Page {page} of {len(sniped_messages[target_channel.id])} | Made with ❤ | Werrzzzy")
 
-    # Handle attachments and media links (IMAGES/GIFS/VIDEOS)
+    # Handle attachments and media links
     media_url = get_media_url(snipe['content'], snipe['attachments'])
     
     if media_url:
@@ -1080,15 +1481,8 @@ async def snipe_command(ctx, page: int = 1, channel: discord.TextChannel = None)
 
     await ctx.send(embed=embed)
 
-# NEW: ,s shortcut command for snipe
-@bot.command(name="s")
-async def s_command(ctx, page: int = 1, channel: discord.TextChannel = None):
-    """Shortcut for snipe command"""
-    await snipe_command(ctx, page, channel)
-
 @bot.command(name="sp")
-async def sp_command(ctx, channel: discord.TextChannel = None):
-    """Display paginated list of all deleted messages"""
+async def sp_prefix(ctx, channel: Union[discord.TextChannel, discord.Thread] = None):
     target_channel = channel or ctx.channel
     
     if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
@@ -1102,39 +1496,14 @@ async def sp_command(ctx, channel: discord.TextChannel = None):
     view = RegularSnipePaginationView(messages, target_channel)
     embed = view.get_embed()
     
-    # Update embed title to show channel if specified
-    if channel:
-        embed.title = f"📜 Deleted Messages List - {target_channel.name}"
+    # Update embed title to show channel
+    embed.title = f"📜 Deleted Messages List - {target_channel.name}"
     
     await ctx.send(embed=embed, view=view)
 
-@bot.command(name="snipepages")
-async def snipepages_command(ctx, channel: discord.TextChannel = None):
-    """Display paginated list of all deleted messages"""
-    target_channel = channel or ctx.channel
-    
-    if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
-        await ctx.send(f"No recently deleted messages in {target_channel.mention}.")
-        return
-
-    # Reverse the messages to show newest first
-    messages = list(reversed(sniped_messages[target_channel.id]))
-    
-    # Use REGULAR pagination view (filtered content)
-    view = RegularSnipePaginationView(messages, target_channel)
-    embed = view.get_embed()
-    
-    # Update embed title to show channel if specified
-    if channel:
-        embed.title = f"📜 Deleted Messages List - {target_channel.name}"
-    
-    await ctx.send(embed=embed, view=view)
-
-# MODIFIED: ,spforce now shows ONLY offensive messages
-@bot.command(name="spforce")
+@bot.command(name="spforce", aliases=["spf"])
 @is_moderator()
-async def spforce_command(ctx, channel: discord.TextChannel = None):
-    """Display paginated list of ONLY offensive deleted messages (moderator only)"""
+async def spforce_prefix(ctx, channel: Union[discord.TextChannel, discord.Thread] = None):
     target_channel = channel or ctx.channel
     
     if target_channel.id not in sniped_messages or not sniped_messages[target_channel.id]:
@@ -1155,35 +1524,105 @@ async def spforce_command(ctx, channel: discord.TextChannel = None):
     view = ModeratorSnipePaginationView(messages, target_channel)
     embed = view.get_embed()
     
-    # Update embed title to show channel if specified
-    if channel:
-        embed.title = f"🔒 Moderator Snipe Pages (Unfiltered) - {target_channel.name}"
+    # Update embed title to show channel
+    embed.title = f"🔒 Moderator Snipe Pages - {target_channel.name} (Unfiltered)"
     
     await ctx.send(embed=embed, view=view)
 
-# NEW: ,spf shortcut for spforce
-@bot.command(name="spf")
-@is_moderator()
-async def spf_command(ctx, channel: discord.TextChannel = None):
-    """Shortcut for spforce command"""
-    await spforce_command(ctx, channel)
+@bot.command(name="namelock", aliases=["nl"])
+@has_manage_nicknames()
+async def namelock_prefix(ctx, user: discord.Member, *, nickname: str):
+    if len(nickname) > 32:
+        await ctx.send("❌ Nickname must be 32 characters or less.")
+        return
+    
+    try:
+        await user.edit(nick=nickname, reason=f"Namelocked by {ctx.author}")
+        namelocked_users[user.id] = nickname
+        
+        embed = discord.Embed(
+            title="✅ User Namelocked",
+            description=f"{user.mention} has been namelocked to `{nickname}`",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to change this user's nickname.")
+    except Exception as e:
+        await ctx.send(f"❌ An error occurred: {str(e)}")
 
-@bot.command(name="editsnipe")
-async def editsnipe_command(ctx, page: int = 1):
-    """Display an edit sniped message by page number"""
-    channel = ctx.channel
-    if channel.id not in edited_messages or not edited_messages[channel.id]:
+@bot.command(name="unl")
+@has_manage_nicknames()
+async def unl_prefix(ctx, user: discord.Member):
+    if user.id not in namelocked_users:
+        await ctx.send("❌ This user is not namelocked.")
+        return
+    
+    del namelocked_users[user.id]
+    
+    embed = discord.Embed(
+        title="✅ User Unlocked",
+        description=f"{user.mention} can now change their nickname freely",
+        color=discord.Color.green()
+    )
+    await ctx.send(embed=embed)
+
+@bot.command(name="rename", aliases=["re"])
+@has_manage_nicknames()
+async def rename_prefix(ctx, user: discord.Member, *, nickname: str):
+    if len(nickname) > 32:
+        await ctx.send("❌ Nickname must be 32 characters or less.")
+        return
+    
+    old_nick = user.display_name
+    
+    try:
+        await user.edit(nick=nickname, reason=f"Renamed by {ctx.author}")
+        
+        embed = discord.Embed(
+            title="✅ User Renamed",
+            description=f"{user.mention} renamed from `{old_nick}` to `{nickname}`",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to change this user's nickname.")
+    except Exception as e:
+        await ctx.send(f"❌ An error occurred: {str(e)}")
+
+@bot.command(name="message", aliases=["mess"])
+@is_moderator()
+async def message_prefix(ctx, *, content: str):
+    await ctx.send(content)
+
+@bot.command(name="saywb")
+@is_moderator()
+async def saywb_prefix(ctx, color: str, *, content: str):
+    try:
+        webhook = await get_or_create_webhook(ctx.channel)
+        
+        embed_color = parse_color(color)
+        embed = discord.Embed(description=content, color=embed_color)
+        
+        await webhook.send(embed=embed, username="SnipeBot", avatar_url=bot.user.display_avatar.url)
+        await ctx.message.delete()  # Delete the command message
+    except Exception as e:
+        await ctx.send(f"❌ Error sending webhook: {str(e)}")
+
+@bot.command(name="editsnipe", aliases=["es"])
+async def editsnipe_prefix(ctx, page: int = 1):
+    if ctx.channel.id not in edited_messages or not edited_messages[ctx.channel.id]:
         await ctx.send("No recently edited messages in this channel.")
         return
 
-    if page < 1 or page > len(edited_messages[channel.id]):
-        await ctx.send(f"Page must be between 1 and {len(edited_messages[channel.id])}.")
+    if page < 1 or page > len(edited_messages[ctx.channel.id]):
+        await ctx.send(f"Page must be between 1 and {len(edited_messages[ctx.channel.id])}.")
         return
 
-    edit = edited_messages[channel.id][-page]
-    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.blue())
+    edit = edited_messages[ctx.channel.id][-page]
+    embed = discord.Embed(title="📝 Edit Sniped Message", color=discord.Color.orange())
     
-    # Filter content if it contains offensive words
+    # Filter content for before and after
     before_content = edit['before_content'] or "*No text content*"
     after_content = edit['after_content'] or "*No text content*"
     
@@ -1192,275 +1631,94 @@ async def editsnipe_command(ctx, page: int = 1):
     if edit.get('after_has_offensive_content', False):
         after_content = filter_content(after_content)
     
-    embed.add_field(name="**Before:**", value=before_content, inline=False)
-    embed.add_field(name="**After:**", value=after_content, inline=False)
+    embed.add_field(name="**Before:**", value=before_content[:1024], inline=False)
+    embed.add_field(name="**After:**", value=after_content[:1024], inline=False)
     embed.add_field(name="**Author:**", value=edit['author'].display_name, inline=True)
     embed.add_field(name="**Time:**", value=edit['time'].strftime('%Y-%m-%d %H:%M:%S'), inline=True)
-    embed.set_footer(text=f"Page {page} of {len(edited_messages[channel.id])} | Made with ❤ | Werrzzzy")
+    embed.set_footer(text=f"Page {page} of {len(edited_messages[ctx.channel.id])} | Made with ❤ | Werrzzzy")
+
+    await ctx.send(embed=embed)
+
+@bot.command(name="help")
+async def help_prefix(ctx):
+    embed = discord.Embed(
+        title="SnipeBot Commands",
+        description="Here are all available commands:",
+        color=discord.Color.blue()
+    )
+    
+    embed.add_field(
+        name="📜 Message Commands",
+        value="`/snipe [page] [channel]` - View deleted messages\n"
+              "`/sp [channel]` - View paginated deleted messages\n"
+              "`/spforce [channel]` - View offensive messages (mods only)\n"
+              "`/editsnipe [page]` - View edited messages",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🔒 Moderation Commands",
+        value="`/namelock <user> <nickname>` - Lock a user's nickname\n"
+              "`/nl <user> <nickname>` - Short for namelock\n"
+              "`/unl <user>` - Unlock a user's nickname\n"
+              "`/rename <user> <nickname>` - Rename a user\n"
+              "`/re <user> <nickname>` - Short for rename",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="💬 Messaging Commands",
+        value="`/message <content>` - Send message as bot\n"
+              "`/mess <content>` - Short for message\n"
+              "`/saywb <color> <content>` - Send via webhook",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🎉 Giveaway Commands",
+        value="`/giveaway` - Create a giveaway\n"
+              "`/giveawaylist <id>` - List participants\n"
+              "`/giveawayremove <id> <user>` - Remove participant\n"
+              "`/giveawayreroll <id>` - Reroll winners\n"
+              "`/giveawayend <id>` - End giveaway early\n"
+              "`/giveawayhost <role>` - Set host role",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="ℹ️ Info",
+        value="All commands work with both `/` (slash) and `,` (prefix)\n"
+              "Supports channels and threads for message commands",
+        inline=False
+    )
+    
+    embed.set_footer(text="Made with ❤ | Werrzzzy")
     
     await ctx.send(embed=embed)
 
-@bot.command(name="es")
-async def es_command(ctx, page: int = 1):
-    """Shortcut for editsnipe command"""
-    await editsnipe_command(ctx, page)
-
-@bot.command(name="say")
-@is_moderator()
-async def say_command(ctx, *, message):
-    """Make the bot say something (moderator only)"""
-    await ctx.message.delete()  # Delete the command message
-    await ctx.send(message)
-
-# NEW: ,saywb webhook command
-@bot.command(name="saywb")
-@is_moderator()
-async def saywb_command(ctx, color=None, *, message):
-    """Make the bot say something using webhook (moderator only)"""
-    try:
-        # Delete the command message
-        await ctx.message.delete()
-        
-        # If color is provided but message starts with a color-like string
-        if color and not message:
-            # User might have provided: ,saywb red hello world
-            # In this case, treat everything after 'red' as the message
-            parts = ctx.message.content.split(None, 2)
-            if len(parts) >= 3:
-                color = parts[1]
-                message = parts[2]
-            else:
-                message = color
-                color = None
-        elif color and not color.startswith('#') and len(color) > 10:
-            # If 'color' is too long, it's probably part of the message
-            message = f"{color} {message}"
-            color = None
-        
-        # Get or create webhook
-        webhook = await get_or_create_webhook(ctx.channel)
-        
-        # Parse color
-        embed_color = parse_color(color) if color else discord.Color.default()
-        
-        # Create embed
-        embed = discord.Embed(description=message, color=embed_color)
-        
-        # Send via webhook
-        await webhook.send(embed=embed, username="SnipeBot", avatar_url=bot.user.avatar.url if bot.user.avatar else None)
-        
-    except discord.Forbidden:
-        await ctx.send("❌ I don't have permission to manage webhooks in this channel.")
-    except Exception as e:
-        await ctx.send(f"❌ An error occurred: {str(e)}")
-
-@bot.command(name="rename")
-@has_manage_nicknames()
-async def rename_command(ctx, user_search, *, new_nickname):
-    """Change someone's nickname (requires manage nicknames permission)"""
-    try:
-        # Try to find user by ID first
-        try:
-            member = ctx.guild.get_member(int(user_search))
-        except ValueError:
-            member = None
-        
-        # If not found by ID, search by name
-        if not member:
-            member = find_user_by_name(ctx.guild, user_search)
-        
-        if not member:
-            await ctx.send(f"❌ No member found matching '{user_search}'.")
-            return
-        
-        old_nick = member.display_name
-        await member.edit(nick=new_nickname)
-        embed = discord.Embed(title="✅ Nickname Changed", color=discord.Color.green())
-        embed.add_field(name="Member", value=member.mention, inline=True)
-        embed.add_field(name="Old Nickname", value=old_nick, inline=True)
-        embed.add_field(name="New Nickname", value=new_nickname, inline=True)
-        embed.set_footer(text="Made with ❤ | Werrzzzy")
-        await ctx.send(embed=embed)
-    except discord.Forbidden:
-        await ctx.send("❌ I don't have permission to change this user's nickname.")
-    except Exception as e:
-        await ctx.send(f"❌ An error occurred: {str(e)}")
-
-# NEW: ,re shortcut for rename
-@bot.command(name="re")
-@has_manage_nicknames()
-async def re_command(ctx, user_search, *, new_nickname):
-    """Shortcut for rename command"""
-    await rename_command(ctx, user_search, new_nickname)
-
-@bot.command(name="message")
-@is_moderator()
-async def message_command(ctx, user_search, *, message):
-    """Send a DM to a user (moderator only)"""
-    try:
-        # Try to find user by ID first
-        try:
-            user = bot.get_user(int(user_search))
-        except ValueError:
-            user = None
-        
-        # If not found by ID, search by name in guild
-        if not user:
-            user = find_user_by_name(ctx.guild, user_search)
-        
-        if not user:
-            await ctx.send(f"❌ No user found matching '{user_search}'.")
-            return
-        
-        # Send simple message (no embed/webhook design)
-        await user.send(message)
-        await ctx.send(f"✅ Message sent to {user.display_name}!")
-    except discord.Forbidden:
-        await ctx.send("❌ Could not send message to this user (they may have DMs disabled).")
-    except Exception as e:
-        await ctx.send(f"❌ An error occurred: {str(e)}")
-
-# NEW: ,mess shortcut for message
-@bot.command(name="mess")
-@is_moderator()
-async def mess_command(ctx, user_search, *, message):
-    """Shortcut for message command"""
-    await message_command(ctx, user_search, message)
-
-# NEW: Namelock commands
-@bot.command(name="namelock")
-@has_manage_nicknames()
-async def namelock_command(ctx, user_search, *, nickname):
-    """Lock a user's nickname (requires manage nicknames permission)"""
-    try:
-        # Try to find user by ID first
-        try:
-            member = ctx.guild.get_member(int(user_search))
-        except ValueError:
-            member = None
-        
-        # If not found by ID, search by name
-        if not member:
-            member = find_user_by_name(ctx.guild, user_search)
-        
-        if not member:
-            await ctx.send(f"❌ No member found matching '{user_search}'.")
-            return
-        
-        # Set the nickname first
-        old_nick = member.display_name
-        await member.edit(nick=nickname)
-        
-        # Add to namelock dictionary
-        namelocked_users[member.id] = nickname
-        
-        embed = discord.Embed(title="🔒 Nickname Locked", color=discord.Color.orange())
-        embed.add_field(name="Member", value=member.mention, inline=True)
-        embed.add_field(name="Old Nickname", value=old_nick, inline=True)
-        embed.add_field(name="Locked Nickname", value=nickname, inline=True)
-        embed.add_field(name="Note", value="User cannot change their nickname until unlocked.", inline=False)
-        embed.set_footer(text="Made with ❤ | Werrzzzy")
-        await ctx.send(embed=embed)
-    except discord.Forbidden:
-        await ctx.send("❌ I don't have permission to change this user's nickname.")
-    except Exception as e:
-        await ctx.send(f"❌ An error occurred: {str(e)}")
-
-# NEW: ,nl shortcut for namelock
-@bot.command(name="nl")
-@has_manage_nicknames()
-async def nl_command(ctx, user_search, *, nickname):
-    """Shortcut for namelock command"""
-    await namelock_command(ctx, user_search, nickname)
-
-@bot.command(name="unl")
-@has_manage_nicknames()
-async def unl_command(ctx, user_search):
-    """Unlock a user's nickname (requires manage nicknames permission)"""
-    try:
-        # Try to find user by ID first
-        try:
-            member = ctx.guild.get_member(int(user_search))
-        except ValueError:
-            member = None
-        
-        # If not found by ID, search by name
-        if not member:
-            member = find_user_by_name(ctx.guild, user_search)
-        
-        if not member:
-            await ctx.send(f"❌ No member found matching '{user_search}'.")
-            return
-        
-        if member.id in namelocked_users:
-            locked_nickname = namelocked_users[member.id]
-            del namelocked_users[member.id]
-            
-            embed = discord.Embed(title="🔓 Nickname Unlocked", color=discord.Color.green())
-            embed.add_field(name="Member", value=member.mention, inline=True)
-            embed.add_field(name="Was Locked To", value=locked_nickname, inline=True)
-            embed.add_field(name="Note", value="User can now change their nickname freely.", inline=False)
-            embed.set_footer(text="Made with ❤ | Werrzzzy")
-            await ctx.send(embed=embed)
-        else:
-            await ctx.send(f"❌ {member.display_name} is not namelocked.")
-    except Exception as e:
-        await ctx.send(f"❌ An error occurred: {str(e)}")
-
-@bot.command(name="clear")
-@has_permission_or_is_admin()
-async def clear_command(ctx):
-    """Clear all sniped messages (admin only)"""
-    channel = ctx.channel
-    snipe_count = len(sniped_messages.get(channel.id, []))
-    edit_count = len(edited_messages.get(channel.id, []))
-    
-    if channel.id in sniped_messages:
-        sniped_messages[channel.id] = []
-    if channel.id in edited_messages:
-        edited_messages[channel.id] = []
-    
-    embed = discord.Embed(title="✅ Messages Cleared", color=discord.Color.green())
-    embed.add_field(name="Deleted Messages Cleared", value=str(snipe_count), inline=True)
-    embed.add_field(name="Edited Messages Cleared", value=str(edit_count), inline=True)
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await ctx.send(embed=embed)
-
-@bot.command(name="manage")
-async def manage_command(ctx):
-    """Display bot management info"""
-    embed = discord.Embed(title="🤖 Bot Management", color=discord.Color.blurple())
-    embed.add_field(name="Bot Owner", value="<@776883692983156736>", inline=True)
-    embed.add_field(name="Bot ID", value=str(bot.user.id), inline=True)
-    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await ctx.send(embed=embed)
-
-@bot.command(name="ping")
-async def ping_command(ctx):
-    """Check bot latency"""
-    latency = round(bot.latency * 1000)
-    embed = discord.Embed(title="🏓 Pong!", color=discord.Color.green())
-    embed.add_field(name="Latency", value=f"{latency}ms", inline=True)
-    embed.set_footer(text="Made with ❤ | Werrzzzy")
-    await ctx.send(embed=embed)
-
-# NEW: ,time command (restricted to specific user)
-@bot.command(name="time")
-@is_specific_user()
-async def time_command(ctx):
-    """Show bot uptime (restricted to specific user)"""
+@bot.command(name="uptime")
+async def uptime_prefix(ctx):
     current_time = time.time()
     uptime_seconds = current_time - BOT_START_TIME
-    uptime_formatted = format_uptime(uptime_seconds)
+    uptime_str = format_uptime(uptime_seconds)
     
-    embed = discord.Embed(title="⏰ Bot Uptime", color=discord.Color.blue())
-    embed.add_field(name="Uptime", value=uptime_formatted, inline=False)
-    embed.add_field(name="Exact Seconds", value=f"{int(uptime_seconds)} seconds", inline=False)
+    embed = discord.Embed(
+        title="🤖 Bot Uptime",
+        description=f"**Uptime:** {uptime_str}",
+        color=discord.Color.green()
+    )
+    
+    embed.add_field(name="Active Giveaways", value=str(len(active_giveaways)), inline=True)
+    embed.add_field(name="Tracked Channels", value=str(len(sniped_messages)), inline=True)
+    embed.add_field(name="Namelocked Users", value=str(len(namelocked_users)), inline=True)
+    
     embed.set_footer(text="Made with ❤ | Werrzzzy")
+    
     await ctx.send(embed=embed)
 
-# Start Flask server and run bot
+# Start Flask in a separate thread
+run_flask()
+
+# Run the bot
 if __name__ == "__main__":
-    run_flask()
-    bot.run(os.getenv("TOKEN"))
+    bot.run(os.getenv("DISCORD_TOKEN"))
