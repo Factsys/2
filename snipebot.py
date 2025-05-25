@@ -361,36 +361,44 @@ def can_host_giveaway(member):
     return any(role_id in user_role_ids for role_id in giveaway_host_roles[guild_id])
 
 # Helper function to check if user meets giveaway requirements
-def check_giveaway_requirements(member, requirements, guild):
+def check_giveaway_requirements(member, requirements):
     """Check if a member meets all giveaway requirements"""
     if not requirements:
         return True, []
     
     failed_requirements = []
+    guild = member.guild
     
-    for req_type, req_value in requirements:
-        if req_type == "messages":
-            user_count = get_user_message_count(guild.id, member.id)
-            if user_count < req_value:
-                failed_requirements.append(f"Need {req_value} messages (has {user_count})")
-        
-        elif req_type == "role":
-            if not any(role.name.lower() == req_value.lower() for role in member.roles):
-                failed_requirements.append(f"Need role: {req_value}")
-        
-        elif req_type == "time-in-server":
-            if member.joined_at:
-                time_in_server = (datetime.utcnow() - member.joined_at.replace(tzinfo=None)).total_seconds()
-                if time_in_server < req_value:
-                    required_time = format_duration(req_value)
-                    actual_time = format_duration(int(time_in_server))
-                    failed_requirements.append(f"Need {required_time} in server (has {actual_time})")
-            else:
-                failed_requirements.append("Cannot verify join date")
-        
-        elif req_type == "roleblacklisted":
-            if any(role.name.lower() == req_value.lower() for role in member.roles):
-                failed_requirements.append(f"Cannot have role: {req_value}")
+    # Check message requirement
+    if 'messages' in requirements:
+        user_count = get_user_message_count(guild.id, member.id)
+        required_messages = requirements['messages']
+        if user_count < required_messages:
+            failed_requirements.append(f"Need {required_messages} messages (has {user_count})")
+    
+    # Check required role
+    if 'required_role' in requirements:
+        role_name = requirements['required_role']
+        if not any(role.name.lower() == role_name.lower() for role in member.roles):
+            failed_requirements.append(f"Need role: {role_name}")
+    
+    # Check blacklisted role
+    if 'blacklisted_role' in requirements:
+        role_name = requirements['blacklisted_role']
+        if any(role.name.lower() == role_name.lower() for role in member.roles):
+            failed_requirements.append(f"Cannot have role: {role_name}")
+    
+    # Check time in server
+    if 'time_in_server' in requirements:
+        if member.joined_at:
+            time_in_server = (datetime.utcnow() - member.joined_at.replace(tzinfo=None)).total_seconds()
+            required_time = requirements['time_in_server']
+            if time_in_server < required_time:
+                required_time_str = format_duration(required_time)
+                actual_time_str = format_duration(int(time_in_server))
+                failed_requirements.append(f"Need {required_time_str} in server (has {actual_time_str})")
+        else:
+            failed_requirements.append("Cannot verify join date")
     
     return len(failed_requirements) == 0, failed_requirements
 
@@ -501,8 +509,8 @@ class GiveawayView(discord.ui.View):
             return
         
         # Check requirements
-        requirements = self.giveaway_data.get('requirements', [])
-        meets_reqs, failed_reqs = check_giveaway_requirements(user, requirements, guild)
+        requirements = self.giveaway_data.get('requirements', {})
+        meets_reqs, failed_reqs = check_giveaway_requirements(user, requirements)
         
         if not meets_reqs:
             failed_text = "\n".join(f"• {req}" for req in failed_reqs)
@@ -1168,16 +1176,28 @@ async def saywb_slash(interaction: discord.Interaction, color: str, content: str
 
 # ========== GIVEAWAY COMMANDS ==========
 
-@bot.tree.command(name="giveaway", description="Create a giveaway with requirements")
+@bot.tree.command(name="giveaway", description="Create a giveaway with specific requirements")
 @app_commands.describe(
     prize="What the winner will receive",
     duration="How long the giveaway runs (e.g., 1h, 30m, 2d)",
     winners="Number of winners (default: 1)",
-    requirements="Requirements (e.g., 'messages 50, role @Member, time-in-server 1d')",
-    channel="Channel to post the giveaway (optional)"
+    channel="Channel to post the giveaway (optional)",
+    messages_req="Minimum messages required to join (optional)",
+    required_role="Role required to join (optional)",
+    blacklisted_role="Role that cannot join (optional)",
+    time_in_server="Time required in server to join (e.g., 1d, 2h) (optional)"
 )
 @check_giveaway_host()
-async def giveaway_slash(interaction: discord.Interaction, prize: str, duration: str, winners: int = 1, requirements: str = None, channel: Union[discord.TextChannel, discord.Thread] = None):
+async def giveaway_slash(interaction: discord.Interaction, 
+                        prize: str, 
+                        duration: str, 
+                        winners: int = 1, 
+                        channel: Union[discord.TextChannel, discord.Thread] = None,
+                        messages_req: int = None,
+                        required_role: discord.Role = None,
+                        blacklisted_role: discord.Role = None,
+                        time_in_server: str = None):
+    
     target_channel = channel or interaction.channel
     
     # Parse duration
@@ -1190,32 +1210,27 @@ async def giveaway_slash(interaction: discord.Interaction, prize: str, duration:
         await interaction.response.send_message("❌ Number of winners must be between 1 and 20.", ephemeral=True)
         return
     
-    # Parse requirements
-    parsed_requirements = []
-    if requirements:
-        req_parts = [req.strip() for req in requirements.split(',')]
-        for req in req_parts:
-            req = req.strip()
-            if req.startswith('messages '):
-                try:
-                    msg_count = int(req.split()[1])
-                    parsed_requirements.append(('messages', msg_count))
-                except (IndexError, ValueError):
-                    await interaction.response.send_message(f"❌ Invalid messages requirement: {req}", ephemeral=True)
-                    return
-            elif req.startswith('role '):
-                role_name = req[5:].strip().lstrip('@')
-                parsed_requirements.append(('role', role_name))
-            elif req.startswith('time-in-server '):
-                time_str = req.split()[1]
-                time_seconds = parse_time_string(time_str)
-                if time_seconds == 0:
-                    await interaction.response.send_message(f"❌ Invalid time format: {time_str}", ephemeral=True)
-                    return
-                parsed_requirements.append(('time-in-server', time_seconds))
-            elif req.startswith('roleblacklisted '):
-                role_name = req[15:].strip().lstrip('@')
-                parsed_requirements.append(('roleblacklisted', role_name))
+    # Build requirements dictionary
+    requirements = {}
+    
+    if messages_req is not None:
+        if messages_req < 0:
+            await interaction.response.send_message("❌ Message requirement must be 0 or higher.", ephemeral=True)
+            return
+        requirements['messages'] = messages_req
+    
+    if required_role:
+        requirements['required_role'] = required_role.name
+    
+    if blacklisted_role:
+        requirements['blacklisted_role'] = blacklisted_role.name
+    
+    if time_in_server:
+        time_seconds = parse_time_string(time_in_server)
+        if time_seconds == 0:
+            await interaction.response.send_message(f"❌ Invalid time format: {time_in_server}", ephemeral=True)
+            return
+        requirements['time_in_server'] = time_seconds
     
     # Calculate end time
     end_time = datetime.utcnow() + timedelta(seconds=duration_seconds)
@@ -1231,17 +1246,17 @@ async def giveaway_slash(interaction: discord.Interaction, prize: str, duration:
     embed.add_field(name="Ends", value=f"<t:{int(end_time.timestamp())}:R>", inline=True)
     embed.add_field(name="Hosted by", value=interaction.user.mention, inline=True)
     
-    if parsed_requirements:
+    # Add requirements if any exist
+    if requirements:
         req_text = []
-        for req_type, req_value in parsed_requirements:
-            if req_type == "messages":
-                req_text.append(f"• At least {req_value} messages in server")
-            elif req_type == "role":
-                req_text.append(f"• Must have role: {req_value}")
-            elif req_type == "time-in-server":
-                req_text.append(f"• Must be in server for: {format_duration(req_value)}")
-            elif req_type == "roleblacklisted":
-                req_text.append(f"• Cannot have role: {req_value}")
+        if 'messages' in requirements:
+            req_text.append(f"• At least {requirements['messages']} messages in server")
+        if 'required_role' in requirements:
+            req_text.append(f"• Must have role: {requirements['required_role']}")
+        if 'blacklisted_role' in requirements:
+            req_text.append(f"• Cannot have role: {requirements['blacklisted_role']}")
+        if 'time_in_server' in requirements:
+            req_text.append(f"• Must be in server for: {format_duration(requirements['time_in_server'])}")
         
         embed.add_field(name="Requirements", value="\n".join(req_text), inline=False)
     
@@ -1254,7 +1269,7 @@ async def giveaway_slash(interaction: discord.Interaction, prize: str, duration:
         'channel_id': target_channel.id,
         'end_time': end_time,
         'winners': winners,
-        'requirements': parsed_requirements,
+        'requirements': requirements,
         'participants': []
     }
     
@@ -1676,7 +1691,7 @@ async def help_prefix(ctx):
     
     embed.add_field(
         name="🎉 Giveaway Commands",
-        value="`/giveaway` - Create a giveaway\n"
+        value="`/giveaway` - Create a giveaway with individual requirements\n"
               "`/giveawaylist <id>` - List participants\n"
               "`/giveawayremove <id> <user>` - Remove participant\n"
               "`/giveawayreroll <id>` - Reroll winners\n"
@@ -1688,7 +1703,8 @@ async def help_prefix(ctx):
     embed.add_field(
         name="ℹ️ Info",
         value="All commands work with both `/` (slash) and `,` (prefix)\n"
-              "Supports channels and threads for message commands",
+              "Supports channels and threads for message commands\n"
+              "Giveaway requirements are now separate parameters to prevent bypassing",
         inline=False
     )
     
