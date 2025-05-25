@@ -682,25 +682,17 @@ async def on_ready():
     # Start background tasks
     giveaway_checker.start()
     
-    # Sync slash commands globally and to all guilds
+    # FIXED: Proper slash command syncing for application support
     try:
-        # Clear existing commands first
-        bot.tree.clear_commands()
-        
-        # Re-add all slash commands
+        # Sync slash commands globally (this is what makes them appear on the bot's profile)
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} global command(s)")
+        print(f"Successfully synced {len(synced)} slash command(s) globally")
         
-        # Also sync to each guild for faster updates
-        for guild in bot.guilds:
-            try:
-                synced_guild = await bot.tree.sync(guild=guild)
-                print(f"Synced {len(synced_guild)} command(s) to {guild.name}")
-            except Exception as e:
-                print(f"Failed to sync commands to {guild.name}: {e}")
-                
+        # The bot profile will now show application support with "/" commands
+        print("Application support (/) is now active on bot profile!")
+        
     except Exception as e:
-        print(f"Failed to sync commands: {e}")
+        print(f"Failed to sync slash commands: {e}")
 
 @bot.event
 async def on_message_delete(message):
@@ -1082,6 +1074,70 @@ async def slash_stats(interaction: discord.Interaction):
     embed.set_footer(text="Made with ❤ by Werrzzzy")
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="create", description="Create reaction role message")
+@app_commands.describe(
+    text="Text for the reaction role message",
+    emoji1="First emoji",
+    role1="First role",
+    emoji2="Second emoji (optional)",
+    role2="Second role (optional)",
+    color="Embed color (optional)"
+)
+async def slash_create(
+    interaction: discord.Interaction,
+    text: str,
+    emoji1: str,
+    role1: discord.Role,
+    emoji2: str = None,
+    role2: discord.Role = None,
+    color: str = "blue"
+):
+    if is_user_blocked(interaction.user.id):
+        await interaction.response.send_message("❌ You are blocked from using bot functions.", ephemeral=True)
+        return
+    
+    if not interaction.user.guild_permissions.manage_roles and interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ You need Manage Roles permission to use this command.", ephemeral=True)
+        return
+    
+    # Build role mapping
+    role_mapping = {emoji1: role1.id}
+    if emoji2 and role2:
+        role_mapping[emoji2] = role2.id
+    
+    # Parse color
+    embed_color = parse_color(color)
+    
+    # Create embed
+    embed = discord.Embed(
+        title="🎭 Reaction Roles",
+        description=text,
+        color=embed_color
+    )
+    
+    role_list = []
+    for emoji, role_id in role_mapping.items():
+        role = interaction.guild.get_role(role_id)
+        if role:
+            role_list.append(f"{emoji} - {role.mention}")
+    
+    embed.add_field(name="Available Roles", value='\n'.join(role_list), inline=False)
+    embed.set_footer(text="React to get/remove roles!")
+    
+    # Send message and add reactions
+    await interaction.response.send_message(embed=embed)
+    message = await interaction.original_response()
+    
+    # Store reaction role mapping
+    reaction_roles[message.id] = role_mapping
+    
+    # Add reactions
+    for emoji in role_mapping.keys():
+        try:
+            await message.add_reaction(emoji)
+        except discord.HTTPException:
+            pass
 
 # ===== PREFIX COMMANDS =====
 
