@@ -553,6 +553,78 @@ class GiveawayView(discord.ui.View):
             view = PaginationView(embeds)
             await interaction.response.send_message(embed=embeds[0], view=view, ephemeral=True)
 
+# Help View
+class HelpPaginationView(discord.ui.View):
+    def __init__(self, timeout=300):
+        super().__init__(timeout=timeout)
+        self.current_page = 0
+        self.pages = [
+            {
+                "title": "📜 FACTSY Commands - Page 1",
+                "fields": [
+                    ("**Message Tracking**", "`,snipe` `,s [1-100]` - Show deleted message by number\n`,editsnipe` `,es` - Show last edited message\n`,sp [#channel] [page]` - List normal deleted messages\n`,spf [#channel] [page]` - Show filtered/censored messages only\n`,spl [#channel] [page]` - Show deleted links only", False),
+                    ("**Moderation**", "`,namelock` `,nl` - Lock user's nickname\n`,unl` - Unlock user's nickname\n`,rename` `,re` - Change user's nickname\n`,say` - Send normal message\n`,saywb` - Send embed message", False)
+                ]
+            },
+            {
+                "title": "📜 FACTSY Commands - Page 2", 
+                "fields": [
+                    ("**Giveaways**", "`,gw [id]` - Reroll giveaway winner\n`/giveaway` - Create advanced giveaway\n`/giveaway_host [@role]` - Set giveaway host roles", False),
+                    ("**Management**", "`,block` - Block user from bot\n`,mess` - DM user globally\n`,role` - Add role to user\n`,namelockimmune` `,nli` - Make user immune", False)
+                ]
+            },
+            {
+                "title": "📜 FACTSY Commands - Page 3",
+                "fields": [
+                    ("**Reaction Roles**", "`,create` - Create reaction roles (1-6 options)", False),
+                    ("**Bot Features**", "`,manage` - Bot management panel\n`/unblock` - Unblock user from bot\n`/ping` - Show bot latency\n`/prefix` - Change server prefix", False)
+                ]
+            },
+            {
+                "title": "📜 FACTSY Commands - Page 4",
+                "fields": [
+                    ("**Info**", "All commands support both prefix and slash (/) versions\nModerators can use most commands\nBlocked users cannot use any bot functions\nSeconds support added to durations (e.g., 30s)", False),
+                    ("**Usage Examples**", "`,s 5` - Show 5th deleted message\n`,sp #general` - Show normal deleted messages in channel\n`,spf` - Show only filtered messages\n`,spl` - Show only messages with links", False)
+                ]
+            }
+        ]
+        self.total_pages = len(self.pages)
+        self.update_buttons()
+    
+    def update_buttons(self):
+        self.previous_button.disabled = self.current_page == 0
+        self.next_button.disabled = self.current_page >= self.total_pages - 1
+    
+    def get_embed(self):
+        page_data = self.pages[self.current_page]
+        embed = discord.Embed(title=page_data["title"], color=discord.Color.blue())
+        
+        for name, value, inline in page_data["fields"]:
+            embed.add_field(name=name, value=value, inline=inline)
+        
+        embed.set_footer(text=f"Page {self.current_page + 1} of {self.total_pages} | Made with ❤ | Werrzzzy")
+        return embed
+    
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary)
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_buttons()
+            embed = self.get_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+    
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            self.update_buttons()
+            embed = self.get_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+
 # Background task to check giveaways
 @tasks.loop(seconds=30)
 async def giveaway_checker():
@@ -721,7 +793,7 @@ async def on_member_update(before, after):
             except discord.Forbidden:
                 pass
 
-# FIXED SNIPE COMMAND - Now works for images only messages
+# FIXED SNIPE COMMAND - Now works for images AND shows them visually
 @bot.command(name="snipe", aliases=["s"])
 @not_blocked()
 async def snipe_command(ctx, number: int = 1):
@@ -748,252 +820,40 @@ async def snipe_command(ctx, number: int = 1):
     # Get media URL from content or attachments
     media_url = get_media_url(message_data['content'], message_data['attachments'])
     
-    # FIXED: Handle content properly - show filtered version if offensive
+    # FIXED: Always show filtered content when displaying in snipe
     display_content = None
     if message_data['content']:
-        if message_data.get('is_filtered', False):
-            display_content = filter_content(message_data['content'])
-        else:
-            display_content = message_data['content']
+        display_content = filter_content(message_data['content'])  # Always filter for display
         
         # Clean content from media to avoid duplication
         if media_url:
             display_content = clean_content_from_media(display_content, media_url)
     
-    # Set description only if there's text content after cleaning
+    # Set description - even if it's empty, that's fine
     if display_content and display_content.strip():
         embed.description = display_content
     
-    # Add author info with user mention
-    embed.add_field(name="Author", value=f"{message_data['author'].mention}", inline=True)
+    # Add author info with user mention at the end
+    author_text = f"{message_data['author'].mention}"
+    embed.add_field(name="Author", value=author_text, inline=True)
     
-    # FIXED: Show images/media visually
+    # FIXED: Show images/media visually - this is the key fix!
     if media_url:
-        # For images, use embed.set_image for visual display
-        if any(ext in media_url.lower() for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
-            embed.set_image(url=media_url)
-        # For Tenor/Giphy, these will show visually too
-        elif 'tenor.com' in media_url or 'giphy.com' in media_url:
+        # For all image types and tenor/giphy, show visually
+        if (any(ext in media_url.lower() for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']) or 
+            'tenor.com' in media_url or 'giphy.com' in media_url):
             embed.set_image(url=media_url)
         else:
             # For other media, add as field
             embed.add_field(name="Media", value=media_url, inline=False)
     
-    # If no content and no media, show a default message
+    # FIXED: If there's no content AND no media, show a message
     if not display_content and not media_url:
         embed.description = "*Image/Media only message*"
     
-    # Add footer with user name
-    embed.set_footer(text=f"Message by {message_data['author'].name}")
-    
     await ctx.send(embed=embed)
 
-# SLASH COMMAND VERSION
-@bot.tree.command(name="snipe", description="Show deleted message by number")
-@app_commands.describe(number="Message number (1-100)")
-@check_not_blocked()
-async def snipe_slash(interaction: discord.Interaction, number: int = 1):
-    """Slash version of snipe command"""
-    channel_id = interaction.channel.id
-    
-    if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await interaction.response.send_message("❌ No deleted messages found in this channel.", ephemeral=True)
-        return
-    
-    if number < 1 or number > len(sniped_messages[channel_id]):
-        await interaction.response.send_message(f"❌ Invalid number. Use 1-{len(sniped_messages[channel_id])}", ephemeral=True)
-        return
-    
-    # Get message (number is 1-indexed, list is 0-indexed)
-    message_data = sniped_messages[channel_id][number - 1]
-    
-    # Create embed
-    embed = discord.Embed(
-        title="📜 Sniped Message",
-        color=discord.Color.blue()
-    )
-    
-    # Get media URL from content or attachments
-    media_url = get_media_url(message_data['content'], message_data['attachments'])
-    
-    # FIXED: Handle content properly - show filtered version if offensive
-    display_content = None
-    if message_data['content']:
-        if message_data.get('is_filtered', False):
-            display_content = filter_content(message_data['content'])
-        else:
-            display_content = message_data['content']
-        
-        # Clean content from media to avoid duplication
-        if media_url:
-            display_content = clean_content_from_media(display_content, media_url)
-    
-    # Set description only if there's text content after cleaning
-    if display_content and display_content.strip():
-        embed.description = display_content
-    
-    # Add author info with user mention
-    embed.add_field(name="Author", value=f"{message_data['author'].mention}", inline=True)
-    
-    # FIXED: Show images/media visually
-    if media_url:
-        # For images, use embed.set_image for visual display
-        if any(ext in media_url.lower() for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
-            embed.set_image(url=media_url)
-        # For Tenor/Giphy, these will show visually too
-        elif 'tenor.com' in media_url or 'giphy.com' in media_url:
-            embed.set_image(url=media_url)
-        else:
-            # For other media, add as field
-            embed.add_field(name="Media", value=media_url, inline=False)
-    
-    # If no content and no media, show a default message
-    if not display_content and not media_url:
-        embed.description = "*Image/Media only message*"
-    
-    # Add footer with user name
-    embed.set_footer(text=f"Message by {message_data['author'].name}")
-    
-    await interaction.response.send_message(embed=embed)
-
-# FIXED: Separated snipe commands for different message types
-@bot.command(name="sp")
-@not_blocked()
-async def snipe_pages(ctx, channel: Optional[discord.TextChannel] = None, page: int = 1):
-    """Show normal deleted messages only (no filtered/censored content)"""
-    target_channel = channel or ctx.channel
-    channel_id = target_channel.id
-    
-    if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await ctx.send(f"❌ No deleted messages found in {target_channel.mention}.")
-        return
-    
-    # Filter for normal messages only (not filtered and not link-only)
-    normal_messages = [msg for msg in sniped_messages[channel_id] 
-                      if not msg.get('is_filtered', False) and not msg.get('has_links', False)]
-    
-    if not normal_messages:
-        await ctx.send(f"❌ No normal deleted messages found in {target_channel.mention}.")
-        return
-    
-    # Create pagination
-    total_pages = math.ceil(len(normal_messages) / MESSAGES_PER_PAGE)
-    if page < 1 or page > total_pages:
-        await ctx.send(f"❌ Invalid page. Use 1-{total_pages}")
-        return
-    
-    start_idx = (page - 1) * MESSAGES_PER_PAGE
-    end_idx = min(start_idx + MESSAGES_PER_PAGE, len(normal_messages))
-    page_messages = normal_messages[start_idx:end_idx]
-    
-    embed = discord.Embed(
-        title=f"📜 Normal Deleted Messages - {target_channel.name}",
-        color=discord.Color.blue()
-    )
-    
-    message_list = []
-    for i, msg_data in enumerate(page_messages, start=start_idx + 1):
-        content = truncate_content(msg_data['content'])
-        author_name = msg_data['author'].name
-        message_list.append(f"{i}. {content} - {author_name}")
-    
-    embed.description = "\n".join(message_list)
-    embed.set_footer(text=f"Page {page} of {total_pages} | Use ,s [number] to view full message")
-    
-    await ctx.send(embed=embed)
-
-@bot.command(name="spf")
-@not_blocked()
-async def snipe_filtered(ctx, channel: Optional[discord.TextChannel] = None, page: int = 1):
-    """Show filtered/censored deleted messages only"""
-    target_channel = channel or ctx.channel
-    channel_id = target_channel.id
-    
-    if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await ctx.send(f"❌ No deleted messages found in {target_channel.mention}.")
-        return
-    
-    # Filter for censored messages only
-    filtered_messages = [msg for msg in sniped_messages[channel_id] 
-                        if msg.get('is_filtered', False)]
-    
-    if not filtered_messages:
-        await ctx.send(f"❌ No filtered deleted messages found in {target_channel.mention}.")
-        return
-    
-    # Create pagination
-    total_pages = math.ceil(len(filtered_messages) / MESSAGES_PER_PAGE)
-    if page < 1 or page > total_pages:
-        await ctx.send(f"❌ Invalid page. Use 1-{total_pages}")
-        return
-    
-    start_idx = (page - 1) * MESSAGES_PER_PAGE
-    end_idx = min(start_idx + MESSAGES_PER_PAGE, len(filtered_messages))
-    page_messages = filtered_messages[start_idx:end_idx]
-    
-    embed = discord.Embed(
-        title=f"🚫 Filtered Deleted Messages - {target_channel.name}",
-        color=discord.Color.red()
-    )
-    
-    message_list = []
-    for i, msg_data in enumerate(page_messages, start=start_idx + 1):
-        # Show filtered version
-        filtered_content = filter_content(msg_data['content']) if msg_data['content'] else "*No text*"
-        content = truncate_content(filtered_content)
-        author_name = msg_data['author'].name
-        message_list.append(f"{i}. {content} - {author_name}")
-    
-    embed.description = "\n".join(message_list)
-    embed.set_footer(text=f"Page {page} of {total_pages} | Showing censored content")
-    
-    await ctx.send(embed=embed)
-
-@bot.command(name="spl")
-@not_blocked()
-async def snipe_links(ctx, channel: Optional[discord.TextChannel] = None, page: int = 1):
-    """Show deleted messages with links only"""
-    target_channel = channel or ctx.channel
-    channel_id = target_channel.id
-    
-    if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await ctx.send(f"❌ No deleted messages found in {target_channel.mention}.")
-        return
-    
-    # Filter for messages with links only
-    link_messages = [msg for msg in sniped_messages[channel_id] 
-                    if msg.get('has_links', False)]
-    
-    if not link_messages:
-        await ctx.send(f"❌ No deleted link messages found in {target_channel.mention}.")
-        return
-    
-    # Create pagination
-    total_pages = math.ceil(len(link_messages) / MESSAGES_PER_PAGE)
-    if page < 1 or page > total_pages:
-        await ctx.send(f"❌ Invalid page. Use 1-{total_pages}")
-        return
-    
-    start_idx = (page - 1) * MESSAGES_PER_PAGE
-    end_idx = min(start_idx + MESSAGES_PER_PAGE, len(link_messages))
-    page_messages = link_messages[start_idx:end_idx]
-    
-    embed = discord.Embed(
-        title=f"🔗 Deleted Link Messages - {target_channel.name}",
-        color=discord.Color.green()
-    )
-    
-    message_list = []
-    for i, msg_data in enumerate(page_messages, start=start_idx + 1):
-        content = truncate_content(msg_data['content'])
-        author_name = msg_data['author'].name
-        message_list.append(f"{i}. {content} - {author_name}")
-    
-    embed.description = "\n".join(message_list)
-    embed.set_footer(text=f"Page {page} of {total_pages} | Messages with links only")
-    
-    await ctx.send(embed=embed)
-
+# FIXED EDIT SNIPE COMMAND
 @bot.command(name="editsnipe", aliases=["es"])
 @not_blocked()
 async def editsnipe_command(ctx):
@@ -1007,38 +867,162 @@ async def editsnipe_command(ctx):
     edit_data = edited_messages[channel_id][0]
     
     embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.orange())
-    embed.add_field(name="Before", value=edit_data['before_content'] or "*Empty*", inline=False)
-    embed.add_field(name="After", value=edit_data['after_content'] or "*Empty*", inline=False)
-    embed.add_field(name="Author", value=edit_data['author'].mention, inline=True)
-    embed.set_footer(text=f"Edited by {edit_data['author'].name}")
+    
+    if edit_data['before_content']:
+        embed.add_field(name="Before", value=edit_data['before_content'][:1024], inline=False)
+    
+    if edit_data['after_content']:
+        embed.add_field(name="After", value=edit_data['after_content'][:1024], inline=False)
+    
+    embed.add_field(name="Author", value=f"{edit_data['author'].mention}", inline=True)
     
     await ctx.send(embed=embed)
 
-@bot.tree.command(name="editsnipe", description="Show last edited message")
-@check_not_blocked()
-async def editsnipe_slash(interaction: discord.Interaction):
-    """Slash version of editsnipe"""
-    channel_id = interaction.channel.id
+# FIXED SP COMMAND - Normal messages only (not filtered, not links)
+@bot.command(name="sp")
+@not_blocked()
+async def sp_command(ctx, channel: discord.TextChannel = None, page: int = 1):
+    """Show normal deleted messages only (no filtered content, no links)"""
+    target_channel = channel or ctx.channel
+    channel_id = target_channel.id
     
-    if channel_id not in edited_messages or not edited_messages[channel_id]:
-        await interaction.response.send_message("❌ No edited messages found in this channel.", ephemeral=True)
+    if channel_id not in sniped_messages or not sniped_messages[channel_id]:
+        await ctx.send(f"❌ No deleted messages found in {target_channel.mention}.")
         return
     
-    edit_data = edited_messages[channel_id][0]
+    # FIXED: Filter to only normal messages (not filtered and not links)
+    normal_messages = [msg for msg in sniped_messages[channel_id] 
+                      if not msg.get('is_filtered', False) and not msg.get('has_links', False)]
     
-    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.orange())
-    embed.add_field(name="Before", value=edit_data['before_content'] or "*Empty*", inline=False)
-    embed.add_field(name="After", value=edit_data['after_content'] or "*Empty*", inline=False)
-    embed.add_field(name="Author", value=edit_data['author'].mention, inline=True)
-    embed.set_footer(text=f"Edited by {edit_data['author'].name}")
+    if not normal_messages:
+        await ctx.send(f"❌ No normal deleted messages found in {target_channel.mention}.")
+        return
     
-    await interaction.response.send_message(embed=embed)
+    # Pagination
+    total_pages = math.ceil(len(normal_messages) / MESSAGES_PER_PAGE)
+    if page < 1 or page > total_pages:
+        await ctx.send(f"❌ Invalid page. Use 1-{total_pages}")
+        return
+    
+    start_idx = (page - 1) * MESSAGES_PER_PAGE
+    end_idx = min(start_idx + MESSAGES_PER_PAGE, len(normal_messages))
+    page_messages = normal_messages[start_idx:end_idx]
+    
+    embed = discord.Embed(
+        title=f"📜 Normal Deleted Messages - {target_channel.name}",
+        description=f"Page {page} of {total_pages} | Total: {len(normal_messages)}",
+        color=discord.Color.blue()
+    )
+    
+    for i, msg_data in enumerate(page_messages, start=start_idx + 1):
+        content = truncate_content(msg_data['content'])
+        embed.add_field(
+            name=f"{i}. {msg_data['author'].display_name}",
+            value=f"{content} - {msg_data['author'].mention}",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
 
-# NEW: Giveaway host role management command
-@bot.tree.command(name="giveaway_host", description="Set roles that can host giveaways")
+# FIXED SPF COMMAND - Filtered messages only (shows the actual offensive words with **)
+@bot.command(name="spf")
+@not_blocked()
+async def spf_command(ctx, channel: discord.TextChannel = None, page: int = 1):
+    """Show filtered/censored messages only (shows actual filtered content)"""
+    target_channel = channel or ctx.channel
+    channel_id = target_channel.id
+    
+    if channel_id not in sniped_messages or not sniped_messages[channel_id]:
+        await ctx.send(f"❌ No deleted messages found in {target_channel.mention}.")
+        return
+    
+    # FIXED: Filter to only filtered messages
+    filtered_messages = [msg for msg in sniped_messages[channel_id] 
+                        if msg.get('is_filtered', False)]
+    
+    if not filtered_messages:
+        await ctx.send(f"❌ No filtered messages found in {target_channel.mention}.")
+        return
+    
+    # Pagination
+    total_pages = math.ceil(len(filtered_messages) / MESSAGES_PER_PAGE)
+    if page < 1 or page > total_pages:
+        await ctx.send(f"❌ Invalid page. Use 1-{total_pages}")
+        return
+    
+    start_idx = (page - 1) * MESSAGES_PER_PAGE
+    end_idx = min(start_idx + MESSAGES_PER_PAGE, len(filtered_messages))
+    page_messages = filtered_messages[start_idx:end_idx]
+    
+    embed = discord.Embed(
+        title=f"🚫 Filtered Messages - {target_channel.name}",
+        description=f"Page {page} of {total_pages} | Total: {len(filtered_messages)}",
+        color=discord.Color.red()
+    )
+    
+    for i, msg_data in enumerate(page_messages, start=start_idx + 1):
+        # FIXED: Show the filtered content (with ** replacements)
+        content = filter_content(msg_data['content']) if msg_data['content'] else "*No text*"
+        content = truncate_content(content)
+        embed.add_field(
+            name=f"{i}. {msg_data['author'].display_name}",
+            value=f"{content} - {msg_data['author'].mention}",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+# FIXED SPL COMMAND - Links only
+@bot.command(name="spl")
+@not_blocked()
+async def spl_command(ctx, channel: discord.TextChannel = None, page: int = 1):
+    """Show deleted links only"""
+    target_channel = channel or ctx.channel
+    channel_id = target_channel.id
+    
+    if channel_id not in sniped_messages or not sniped_messages[channel_id]:
+        await ctx.send(f"❌ No deleted messages found in {target_channel.mention}.")
+        return
+    
+    # FIXED: Filter to only messages with links
+    link_messages = [msg for msg in sniped_messages[channel_id] 
+                    if msg.get('has_links', False)]
+    
+    if not link_messages:
+        await ctx.send(f"❌ No messages with links found in {target_channel.mention}.")
+        return
+    
+    # Pagination
+    total_pages = math.ceil(len(link_messages) / MESSAGES_PER_PAGE)
+    if page < 1 or page > total_pages:
+        await ctx.send(f"❌ Invalid page. Use 1-{total_pages}")
+        return
+    
+    start_idx = (page - 1) * MESSAGES_PER_PAGE
+    end_idx = min(start_idx + MESSAGES_PER_PAGE, len(link_messages))
+    page_messages = link_messages[start_idx:end_idx]
+    
+    embed = discord.Embed(
+        title=f"🔗 Deleted Links - {target_channel.name}",
+        description=f"Page {page} of {total_pages} | Total: {len(link_messages)}",
+        color=discord.Color.green()
+    )
+    
+    for i, msg_data in enumerate(page_messages, start=start_idx + 1):
+        content = truncate_content(msg_data['content'])
+        embed.add_field(
+            name=f"{i}. {msg_data['author'].display_name}",
+            value=f"{content} - {msg_data['author'].mention}",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+# GIVEAWAY HOST COMMAND
+@bot.tree.command(name="giveaway_host", description="Set giveaway host roles")
 @app_commands.describe(role="Role to give giveaway hosting permissions")
 @check_not_blocked()
-async def giveaway_host_role(interaction: discord.Interaction, role: discord.Role):
+async def giveaway_host_slash(interaction: discord.Interaction, role: discord.Role):
     """Set giveaway host roles"""
     if not (is_bot_owner(interaction.user.id) or interaction.user.guild_permissions.administrator):
         await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
@@ -1158,28 +1142,48 @@ async def giveaway_slash(
     
     await interaction.followup.send(f"✅ Giveaway created in {channel.mention}!")
 
-# Continue with other commands...
+# HELP COMMAND
 @bot.command(name="help")
 @not_blocked()
 async def help_command(ctx):
-    """Show help menu with pagination"""
+    """Show help pages"""
     view = HelpPaginationView()
     embed = view.get_embed()
     await ctx.send(embed=embed, view=view)
 
-@bot.tree.command(name="ping", description="Check bot latency")
+# PING COMMAND
+@bot.tree.command(name="ping", description="Show bot latency")
 @check_not_blocked()
 async def ping_slash(interaction: discord.Interaction):
+    """Show bot latency"""
     latency = round(bot.latency * 1000)
-    uptime = format_uptime(time.time() - BOT_START_TIME)
+    uptime_seconds = time.time() - BOT_START_TIME
+    uptime_str = format_uptime(uptime_seconds)
     
     embed = discord.Embed(title="🏓 Pong!", color=discord.Color.green())
     embed.add_field(name="Latency", value=f"{latency}ms", inline=True)
-    embed.add_field(name="Uptime", value=uptime, inline=True)
-    embed.add_field(name="Servers", value=len(bot.guilds), inline=True)
+    embed.add_field(name="Uptime", value=uptime_str, inline=True)
     
     await interaction.response.send_message(embed=embed)
 
+# PREFIX COMMAND
+@bot.tree.command(name="prefix", description="Change server prefix")
+@app_commands.describe(new_prefix="New prefix for the server")
+@check_not_blocked()
+async def prefix_slash(interaction: discord.Interaction, new_prefix: str):
+    """Change server prefix"""
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ You need administrator permissions to change the prefix.", ephemeral=True)
+        return
+    
+    if len(new_prefix) > 5:
+        await interaction.response.send_message("❌ Prefix cannot be longer than 5 characters.", ephemeral=True)
+        return
+    
+    custom_prefixes[interaction.guild.id] = new_prefix
+    await interaction.response.send_message(f"✅ Server prefix changed to `{new_prefix}`")
+
+# Run the bot
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
     if not token:
