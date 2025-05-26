@@ -1035,40 +1035,40 @@ async def slash_giveaway(interaction: discord.Interaction, duration: str, winner
     context="Message content (will be bold and bigger)",
     color="Embed color (optional)",
     emoji1="First emoji (supports Discord custom emojis)",
-    role1="First role to assign",
+    role1="First role (@role, role name, or role ID)",
     emoji2="Second emoji (optional)",
-    role2="Second role to assign (optional)",
+    role2="Second role (@role, role name, or role ID) (optional)",
     emoji3="Third emoji (optional)",
-    role3="Third role to assign (optional)",
+    role3="Third role (@role, role name, or role ID) (optional)",
     emoji4="Fourth emoji (optional)",
-    role4="Fourth role to assign (optional)",
+    role4="Fourth role (@role, role name, or role ID) (optional)",
     emoji5="Fifth emoji (optional)",
-    role5="Fifth role to assign (optional)",
+    role5="Fifth role (@role, role name, or role ID) (optional)",
     emoji6="Sixth emoji (optional)",
-    role6="Sixth role to assign (optional)",
+    role6="Sixth role (@role, role name, or role ID) (optional)",
     emoji7="Seventh emoji (optional)",
-    role7="Seventh role to assign (optional)",
+    role7="Seventh role (@role, role name, or role ID) (optional)",
     emoji8="Eighth emoji (optional)",
-    role8="Eighth role to assign (optional)",
+    role8="Eighth role (@role, role name, or role ID) (optional)",
     emoji9="Ninth emoji (optional)",
-    role9="Ninth role to assign (optional)",
+    role9="Ninth role (@role, role name, or role ID) (optional)",
     emoji10="Tenth emoji (optional)",
-    role10="Tenth role to assign (optional)"
+    role10="Tenth role (@role, role name, or role ID) (optional)"
 )
 async def slash_create(interaction: discord.Interaction, 
                       channel: discord.TextChannel,
                       context: str, 
                       color: str = None,
-                      emoji1: str = None, role1: discord.Role = None,
-                      emoji2: str = None, role2: discord.Role = None,
-                      emoji3: str = None, role3: discord.Role = None,
-                      emoji4: str = None, role4: discord.Role = None,
-                      emoji5: str = None, role5: discord.Role = None,
-                      emoji6: str = None, role6: discord.Role = None,
-                      emoji7: str = None, role7: discord.Role = None,
-                      emoji8: str = None, role8: discord.Role = None,
-                      emoji9: str = None, role9: discord.Role = None,
-                      emoji10: str = None, role10: discord.Role = None):
+                      emoji1: str = None, role1: str = None,
+                      emoji2: str = None, role2: str = None,
+                      emoji3: str = None, role3: str = None,
+                      emoji4: str = None, role4: str = None,
+                      emoji5: str = None, role5: str = None,
+                      emoji6: str = None, role6: str = None,
+                      emoji7: str = None, role7: str = None,
+                      emoji8: str = None, role8: str = None,
+                      emoji9: str = None, role9: str = None,
+                      emoji10: str = None, role10: str = None):
     if is_user_blocked(interaction.user.id):
         await interaction.response.send_message("❌ You are blocked from using bot functions.", ephemeral=True)
         return
@@ -1077,17 +1077,48 @@ async def slash_create(interaction: discord.Interaction,
         await interaction.response.send_message("❌ You need Manage Roles permission to use this command.", ephemeral=True)
         return
     
+    # Helper function to find role by name, ID, or mention
+    def find_role(role_input):
+        if not role_input:
+            return None
+        
+        guild = interaction.guild
+        
+        # Try role mention format <@&123456789>
+        if role_input.startswith('<@&') and role_input.endswith('>'):
+            try:
+                role_id = int(role_input[3:-1])
+                return guild.get_role(role_id)
+            except ValueError:
+                pass
+        
+        # Try role ID (pure number)
+        try:
+            role_id = int(role_input)
+            return guild.get_role(role_id)
+        except ValueError:
+            pass
+        
+        # Try role name (case insensitive)
+        for role in guild.roles:
+            if role.name.lower() == role_input.lower():
+                return role
+        
+        return None
+    
     # Collect emoji-role pairs
     emoji_role_pairs = []
-    pairs = [
-        (emoji1, role1), (emoji2, role2), (emoji3, role3),
-        (emoji4, role4), (emoji5, role5), (emoji6, role6),
-        (emoji7, role7), (emoji8, role8), (emoji9, role9), (emoji10, role10)
-    ]
+    role_inputs = [role1, role2, role3, role4, role5, role6, role7, role8, role9, role10]
+    emoji_inputs = [emoji1, emoji2, emoji3, emoji4, emoji5, emoji6, emoji7, emoji8, emoji9, emoji10]
     
-    for emoji, role in pairs:
-        if emoji and role:
-            emoji_role_pairs.append((emoji, role))
+    for emoji, role_input in zip(emoji_inputs, role_inputs):
+        if emoji and role_input:
+            role = find_role(role_input)
+            if role:
+                emoji_role_pairs.append((emoji, role))
+            else:
+                await interaction.response.send_message(f"❌ Could not find role: `{role_input}`. Please check the role name, ID, or mention.", ephemeral=True)
+                return
     
     if not emoji_role_pairs:
         await interaction.response.send_message("❌ You must provide at least one emoji-role pair.", ephemeral=True)
@@ -1230,6 +1261,42 @@ async def slash_stats(interaction: discord.Interaction):
     embed.set_footer(text="Made with ❤ by Werrzzzy")
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# Add slash version of saywb
+@bot.tree.command(name="saywb", description="Send a webhook message with optional color")
+@app_commands.describe(
+    message="Message to send",
+    color="Color for the message (optional)"
+)
+async def slash_saywb(interaction: discord.Interaction, message: str, color: str = None):
+    if is_user_blocked(interaction.user.id):
+        await interaction.response.send_message("❌ You are blocked from using bot functions.", ephemeral=True)
+        return
+    
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message("❌ You need Manage Messages permission to use this command.", ephemeral=True)
+        return
+    
+    try:
+        webhook = await get_or_create_webhook(interaction.channel)
+        
+        embed_color = parse_color(color) if color else discord.Color.default()
+        
+        # Create embed with the message and color
+        embed = discord.Embed(
+            description=message,
+            color=embed_color
+        )
+        
+        await webhook.send(
+            embed=embed,
+            username=bot.user.display_name,
+            avatar_url=bot.user.display_avatar.url
+        )
+        
+        await interaction.response.send_message("✅ Message sent via webhook!", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to create webhooks in this channel.", ephemeral=True)
 
 # ===== PREFIX COMMANDS =====
 
@@ -1534,42 +1601,6 @@ async def saywb(ctx, *, args):
         await ctx.message.delete()
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to create webhooks in this channel.")
-
-# Add slash version of saywb
-@bot.tree.command(name="saywb", description="Send a webhook message with optional color")
-@app_commands.describe(
-    message="Message to send",
-    color="Color for the message (optional)"
-)
-async def slash_saywb(interaction: discord.Interaction, message: str, color: str = None):
-    if is_user_blocked(interaction.user.id):
-        await interaction.response.send_message("❌ You are blocked from using bot functions.", ephemeral=True)
-        return
-    
-    if not interaction.user.guild_permissions.manage_messages:
-        await interaction.response.send_message("❌ You need Manage Messages permission to use this command.", ephemeral=True)
-        return
-    
-    try:
-        webhook = await get_or_create_webhook(interaction.channel)
-        
-        embed_color = parse_color(color) if color else discord.Color.default()
-        
-        # Create embed with the message and color
-        embed = discord.Embed(
-            description=message,
-            color=embed_color
-        )
-        
-        await webhook.send(
-            embed=embed,
-            username=bot.user.display_name,
-            avatar_url=bot.user.display_avatar.url
-        )
-        
-        await interaction.response.send_message("✅ Message sent via webhook!", ephemeral=True)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ I don't have permission to create webhooks in this channel.", ephemeral=True)
 
 @bot.command()
 @not_blocked()
