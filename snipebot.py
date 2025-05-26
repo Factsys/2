@@ -70,19 +70,19 @@ def normalize_text(text: str) -> str:
 # Step 2: Offensive word filters (regex-based)
 FILTER_PATTERNS = [
     r"n[i1l][g69q][g69a@4][a@4]?",     # n-word
-    r"f[uÃ¼v][c(kq)][k]?",              # f-word
+    r"f[uüv][c(kq)][k]?",              # f-word
     r"r[e3][t+][a@4][r]{1,2}[d]*",     # r-word
     r"b[i1!|][t+][c(kq)][h]+",         # b-word
     r"s[h][i1!|][t+]",                 # shit
     r"r[a@4][p][e3]",                  # rape
     r"a[s$]{2,}[h]*[o0]*[l1!|]*[e]*",  # a-hole
     r"d[i1!|][c(kq)][k]+",             # dick
-    r"c[uÃ¼v][n][t]+",                  # c-word
+    r"c[uüv][n][t]+",                  # c-word
     r"p[o0][r]+[n]+",                  # porn
     r"w[h][o0][r]+[e3]+",              # whore
-    r"s[l1][uÃ¼v][t]+",                 # slut
+    r"s[l1][uüv][t]+",                 # slut
     r"f[a@4][gq69]+",                  # fag
-    r"k[i1l|!][l1][l1]y[o0][uÃ¼v][r]+[s$][e3][l1]+[f]+", # kill yourself
+    r"k[i1l|!][l1][l1]y[o0][uüv][r]+[s$][e3][l1]+[f]+", # kill yourself
     r"ky[s$]+"                         # kys
 ]
 
@@ -448,7 +448,7 @@ class PaginationView(discord.ui.View):
         self.previous_button.disabled = self.current_page == 0
         self.next_button.disabled = self.current_page >= self.total_pages - 1
     
-    @discord.ui.button(emoji="â—€ï¸", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page > 0:
             self.current_page -= 1
@@ -457,7 +457,7 @@ class PaginationView(discord.ui.View):
         else:
             await interaction.response.defer()
     
-    @discord.ui.button(emoji="â–¶ï¸", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page < self.total_pages - 1:
             self.current_page += 1
@@ -472,21 +472,21 @@ class GiveawayView(discord.ui.View):
         super().__init__(timeout=None)
         self.message_id = message_id
     
-    @discord.ui.button(label="Join", style=discord.ButtonStyle.green, emoji="ðŸŽ‰")
+    @discord.ui.button(label="Join", style=discord.ButtonStyle.green, emoji="🎉")
     async def join_giveaway(self, interaction: discord.Interaction, button: discord.ui.Button):
         if is_user_blocked(interaction.user.id):
-            await interaction.response.send_message("âŒ You are blocked from using bot functions.", ephemeral=True)
+            await interaction.response.send_message("❌ You are blocked from using bot functions.", ephemeral=True)
             return
         
         if self.message_id not in active_giveaways:
-            await interaction.response.send_message("âŒ This giveaway is no longer active.", ephemeral=True)
+            await interaction.response.send_message("❌ This giveaway is no longer active.", ephemeral=True)
             return
         
         giveaway = active_giveaways[self.message_id]
         user_id = interaction.user.id
         
         if user_id in giveaway['participants']:
-            await interaction.response.send_message("âŒ You are already participating in this giveaway!", ephemeral=True)
+            await interaction.response.send_message("❌ You are already participating in this giveaway!", ephemeral=True)
             return
         
         # FIXED: Check requirements properly
@@ -495,29 +495,29 @@ class GiveawayView(discord.ui.View):
             if guild_member:
                 meets_requirements, failed_reqs = check_giveaway_requirements(guild_member, giveaway['requirements'])
                 if not meets_requirements:
-                    failed_text = "\n".join([f"â€¢ {req}" for req in failed_reqs])
-                    await interaction.response.send_message(f"âŒ **You don't meet the requirements:**\n{failed_text}", ephemeral=True)
+                    failed_text = "\n".join([f"• {req}" for req in failed_reqs])
+                    await interaction.response.send_message(f"❌ **You don't meet the requirements:**\n{failed_text}", ephemeral=True)
                     return
         
         # Add user to participants
         giveaway['participants'].append(user_id)
-        await interaction.response.send_message("âœ… You have successfully joined the giveaway!", ephemeral=True)
+        await interaction.response.send_message("✅ You have successfully joined the giveaway!", ephemeral=True)
     
-    @discord.ui.button(label="List", style=discord.ButtonStyle.secondary, emoji="ðŸ“‹")
+    @discord.ui.button(label="List", style=discord.ButtonStyle.secondary, emoji="📋")
     async def list_participants(self, interaction: discord.Interaction, button: discord.ui.Button):
         if is_user_blocked(interaction.user.id):
-            await interaction.response.send_message("âŒ You are blocked from using bot functions.", ephemeral=True)
+            await interaction.response.send_message("❌ You are blocked from using bot functions.", ephemeral=True)
             return
         
         if self.message_id not in active_giveaways:
-            await interaction.response.send_message("âŒ This giveaway is no longer active.", ephemeral=True)
+            await interaction.response.send_message("❌ This giveaway is no longer active.", ephemeral=True)
             return
         
         giveaway = active_giveaways[self.message_id]
         participants = giveaway['participants']
         
         if not participants:
-            await interaction.response.send_message("ðŸ“‹ No participants yet!", ephemeral=True)
+            await interaction.response.send_message("📋 No participants yet!", ephemeral=True)
             return
         
         participants_per_page = 10
@@ -530,7 +530,7 @@ class GiveawayView(discord.ui.View):
             page_participants = participants[start_idx:end_idx]
             
             embed = discord.Embed(
-                title=f"ðŸŽ‰ Giveaway Participants",
+                title=f"🎉 Giveaway Participants",
                 description=f"**Prize:** {giveaway['prize']}\n**Total Participants:** {len(participants)}",
                 color=discord.Color.blue()
             )
@@ -560,28 +560,28 @@ class HelpPaginationView(discord.ui.View):
         self.current_page = 0
         self.pages = [
             {
-                "title": "ðŸ“œ FACTSY Commands - Page 1",
+                "title": "📜 FACTSY Commands - Page 1",
                 "fields": [
                     ("**Message Tracking**", "`,snipe` `,s [1-100]` `/snipe` - Show deleted message by number\n`,editsnipe` `,es` `/editsnipe` - Show last edited message\n`,sp [channel] [page]` `/sp` - List normal deleted messages\n`,spf [channel] [page]` `/spf` - Show filtered/censored messages only\n`,spl [channel] [page]` `/spl` - Show deleted links only", False),
                     ("**Moderation**", "`,namelock` `,nl` `/namelock` - Lock user's nickname\n`,unl` `/unl` - Unlock user's nickname\n`,rename` `,re` `/rename` - Change user's nickname\n`,say` `/say` - Send normal message\n`,saywb` `/saywb` - Send embed message", False)
                 ]
             },
             {
-                "title": "ðŸ“œ FACTSY Commands - Page 2", 
+                "title": "📜 FACTSY Commands - Page 2", 
                 "fields": [
                     ("**Giveaways**", "`,gw [id]` `/gw` - Reroll giveaway winner\n`/giveaway` - Create advanced giveaway\n`/giveaway_host [@role]` - Set giveaway host roles", False),
                     ("**Management**", "`,block` `/block` - Block user from bot\n`,mess` `/mess` - DM user globally\n`,role` `/role` - Add role to user\n`,namelockimmune` `,nli` `/namelockimmune` - Make user immune", False)
                 ]
             },
             {
-                "title": "ðŸ“œ FACTSY Commands - Page 3",
+                "title": "📜 FACTSY Commands - Page 3",
                 "fields": [
                     ("**Reaction Roles**", "`,create` `/create` - Create reaction roles (1-6 options)", False),
                     ("**Bot Features**", "`,manage` `/manage` - Bot management panel\n`/unblock` - Unblock user from bot\n`/ping` - Show bot latency\n`/prefix` - Change server prefix", False)
                 ]
             },
             {
-                "title": "ðŸ“œ FACTSY Commands - Page 4",
+                "title": "📜 FACTSY Commands - Page 4",
                 "fields": [
                     ("**Info**", "All commands support both prefix and slash (/) versions\nModerators can use most commands\nBlocked users cannot use any bot functions\nSeconds support added to durations (e.g., 30s)", False),
                     ("**Usage Examples**", "`,s 5` - Show 5th deleted message\n`/saywb #general My Title My Description red` - Send embed\n`/prefix !` - Change prefix to !\n`,sp #general` - Show normal deleted messages in channel", False)
@@ -602,10 +602,10 @@ class HelpPaginationView(discord.ui.View):
         for name, value, inline in page_data["fields"]:
             embed.add_field(name=name, value=value, inline=inline)
         
-        embed.set_footer(text=f"Page {self.current_page + 1} of {self.total_pages} | Made with â¤ | Werrzzzy")
+        embed.set_footer(text=f"Page {self.current_page + 1} of {self.total_pages} | Made with ❤ | Werrzzzy")
         return embed
     
-    @discord.ui.button(emoji="â—€ï¸", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page > 0:
             self.current_page -= 1
@@ -615,7 +615,7 @@ class HelpPaginationView(discord.ui.View):
         else:
             await interaction.response.defer()
     
-    @discord.ui.button(emoji="â–¶ï¸", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page < self.total_pages - 1:
             self.current_page += 1
@@ -650,20 +650,20 @@ async def giveaway_checker():
                     
                     if winner:
                         embed = discord.Embed(
-                            title="ðŸŽ‰ Giveaway Ended!",
+                            title="🎉 Giveaway Ended!",
                             description=f"**Winner:** {winner.mention}\n**Prize:** {giveaway['prize']}",
                             color=discord.Color.green()
                         )
                         embed.set_footer(text="Giveaway has ended!")
                         
                         view = discord.ui.View(timeout=None)
-                        reroll_button = discord.ui.Button(label="Reroll", style=discord.ButtonStyle.primary, emoji="ðŸ”„")
+                        reroll_button = discord.ui.Button(label="Reroll", style=discord.ButtonStyle.primary, emoji="🔄")
                         
                         async def reroll_callback(interaction):
                             if not (is_bot_owner(interaction.user.id) or 
                                     interaction.user.guild_permissions.administrator or 
                                     can_host_giveaway(interaction.user)):
-                                await interaction.response.send_message("âŒ You don't have permission to reroll giveaways.", ephemeral=True)
+                                await interaction.response.send_message("❌ You don't have permission to reroll giveaways.", ephemeral=True)
                                 return
                             
                             if participants:
@@ -671,7 +671,7 @@ async def giveaway_checker():
                                 new_winner = bot.get_user(new_winner_id)
                                 if new_winner:
                                     new_embed = discord.Embed(
-                                        title="ðŸŽ‰ Giveaway Rerolled!",
+                                        title="🎉 Giveaway Rerolled!",
                                         description=f"**New Winner:** {new_winner.mention}\n**Prize:** {giveaway['prize']}",
                                         color=discord.Color.green()
                                     )
@@ -683,7 +683,7 @@ async def giveaway_checker():
                         await message.edit(embed=embed, view=view)
                 else:
                     embed = discord.Embed(
-                        title="ðŸŽ‰ Giveaway Ended!",
+                        title="🎉 Giveaway Ended!",
                         description=f"**No participants**\n**Prize:** {giveaway['prize']}",
                         color=discord.Color.red()
                     )
@@ -845,18 +845,18 @@ async def snipe_command(ctx, number: int = 1):
     channel_id = ctx.channel.id
     
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await ctx.send("âŒ No deleted messages found in this channel.")
+        await ctx.send("❌ No deleted messages found in this channel.")
         return
     
     if number < 1 or number > len(sniped_messages[channel_id]):
-        await ctx.send(f"âŒ Invalid number. Use 1-{len(sniped_messages[channel_id])}")
+        await ctx.send(f"❌ Invalid number. Use 1-{len(sniped_messages[channel_id])}")
         return
     
     message_data = sniped_messages[channel_id][number - 1]
     
     # Create simple embed
     embed = discord.Embed(
-        title="ðŸ“œ Sniped Message",
+        title="📜 Sniped Message",
         color=discord.Color.blue()
     )
     
@@ -889,10 +889,7 @@ async def snipe_command(ctx, number: int = 1):
             embed.add_field(name="Media", value=media_url, inline=False)
     
     # FIXED: Add user mention at the end
-    embed.set_footer(
-        text=f"By {message_data['author'].name} | {len(sniped_messages[channel_id])} total",
-        icon_url=message_data['author'].display_avatar.url
-    )
+    embed.set_footer(text=f"By {message_data['author'].name}", icon_url=message_data['author'].display_avatar.url)
     
     await ctx.send(embed=embed)
 
@@ -904,21 +901,21 @@ async def snipe_pages(ctx, channel: discord.TextChannel = None, page: int = 1):
     channel_id = target_channel.id
     
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await ctx.send(f"âŒ No deleted messages found in {target_channel.mention}.")
+        await ctx.send(f"❌ No deleted messages found in {target_channel.mention}.")
         return
     
     # FIXED: Filter only normal messages (not filtered, not links only)
     normal_messages = [msg for msg in sniped_messages[channel_id] if not msg['is_filtered'] and not msg['has_links']]
     
     if not normal_messages:
-        await ctx.send(f"âŒ No normal deleted messages found in {target_channel.mention}.")
+        await ctx.send(f"❌ No normal deleted messages found in {target_channel.mention}.")
         return
     
     # Pagination logic
     total_pages = math.ceil(len(normal_messages) / MESSAGES_PER_PAGE)
     
     if page < 1 or page > total_pages:
-        await ctx.send(f"âŒ Invalid page. Use 1-{total_pages}")
+        await ctx.send(f"❌ Invalid page. Use 1-{total_pages}")
         return
     
     start_idx = (page - 1) * MESSAGES_PER_PAGE
@@ -926,7 +923,7 @@ async def snipe_pages(ctx, channel: discord.TextChannel = None, page: int = 1):
     page_messages = normal_messages[start_idx:end_idx]
     
     embed = discord.Embed(
-        title=f"ðŸ“œ Normal Deleted Messages - {target_channel.name}",
+        title=f"📜 Normal Deleted Messages - {target_channel.name}",
         color=discord.Color.blue()
     )
     
@@ -949,21 +946,21 @@ async def snipe_filtered(ctx, channel: discord.TextChannel = None, page: int = 1
     channel_id = target_channel.id
     
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await ctx.send(f"âŒ No deleted messages found in {target_channel.mention}.")
+        await ctx.send(f"❌ No deleted messages found in {target_channel.mention}.")
         return
     
     # FIXED: Filter only messages with offensive content
     filtered_messages = [msg for msg in sniped_messages[channel_id] if msg['is_filtered']]
     
     if not filtered_messages:
-        await ctx.send(f"âŒ No filtered/censored deleted messages found in {target_channel.mention}.")
+        await ctx.send(f"❌ No filtered/censored deleted messages found in {target_channel.mention}.")
         return
     
     # Pagination logic
     total_pages = math.ceil(len(filtered_messages) / MESSAGES_PER_PAGE)
     
     if page < 1 or page > total_pages:
-        await ctx.send(f"âŒ Invalid page. Use 1-{total_pages}")
+        await ctx.send(f"❌ Invalid page. Use 1-{total_pages}")
         return
     
     start_idx = (page - 1) * MESSAGES_PER_PAGE
@@ -971,7 +968,7 @@ async def snipe_filtered(ctx, channel: discord.TextChannel = None, page: int = 1
     page_messages = filtered_messages[start_idx:end_idx]
     
     embed = discord.Embed(
-        title=f"ðŸš« Filtered Deleted Messages - {target_channel.name}",
+        title=f"🚫 Filtered Deleted Messages - {target_channel.name}",
         color=discord.Color.red()
     )
     
@@ -996,21 +993,21 @@ async def snipe_links(ctx, channel: discord.TextChannel = None, page: int = 1):
     channel_id = target_channel.id
     
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await ctx.send(f"âŒ No deleted messages found in {target_channel.mention}.")
+        await ctx.send(f"❌ No deleted messages found in {target_channel.mention}.")
         return
     
     # FIXED: Filter only messages with links
     link_messages = [msg for msg in sniped_messages[channel_id] if msg['has_links']]
     
     if not link_messages:
-        await ctx.send(f"âŒ No deleted messages with links found in {target_channel.mention}.")
+        await ctx.send(f"❌ No deleted messages with links found in {target_channel.mention}.")
         return
     
     # Pagination logic
     total_pages = math.ceil(len(link_messages) / MESSAGES_PER_PAGE)
     
     if page < 1 or page > total_pages:
-        await ctx.send(f"âŒ Invalid page. Use 1-{total_pages}")
+        await ctx.send(f"❌ Invalid page. Use 1-{total_pages}")
         return
     
     start_idx = (page - 1) * MESSAGES_PER_PAGE
@@ -1018,7 +1015,7 @@ async def snipe_links(ctx, channel: discord.TextChannel = None, page: int = 1):
     page_messages = link_messages[start_idx:end_idx]
     
     embed = discord.Embed(
-        title=f"ðŸ”— Deleted Messages with Links - {target_channel.name}",
+        title=f"🔗 Deleted Messages with Links - {target_channel.name}",
         color=discord.Color.purple()
     )
     
@@ -1040,12 +1037,12 @@ async def editsnipe_command(ctx):
     channel_id = ctx.channel.id
     
     if channel_id not in edited_messages or not edited_messages[channel_id]:
-        await ctx.send("âŒ No edited messages found in this channel.")
+        await ctx.send("❌ No edited messages found in this channel.")
         return
     
     edit_data = edited_messages[channel_id][0]
     
-    embed = discord.Embed(title="ðŸ“ Edit Snipe", color=discord.Color.orange())
+    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.orange())
     
     if edit_data['before_content']:
         embed.add_field(name="Before", value=edit_data['before_content'][:1024], inline=False)
@@ -1067,17 +1064,17 @@ async def snipe_slash(interaction: discord.Interaction, number: int = 1):
     channel_id = interaction.channel.id
     
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await interaction.response.send_message("âŒ No deleted messages found in this channel.", ephemeral=True)
+        await interaction.response.send_message("❌ No deleted messages found in this channel.", ephemeral=True)
         return
     
     if number < 1 or number > len(sniped_messages[channel_id]):
-        await interaction.response.send_message(f"âŒ Invalid number. Use 1-{len(sniped_messages[channel_id])}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Invalid number. Use 1-{len(sniped_messages[channel_id])}", ephemeral=True)
         return
     
     message_data = sniped_messages[channel_id][number - 1]
     
     embed = discord.Embed(
-        title="ðŸ“œ Sniped Message",
+        title="📜 Sniped Message",
         color=discord.Color.blue()
     )
     
@@ -1104,10 +1101,7 @@ async def snipe_slash(interaction: discord.Interaction, number: int = 1):
         else:
             embed.add_field(name="Media", value=media_url, inline=False)
     
-    embed.set_footer(
-        text=f"By {message_data['author'].name} | {len(sniped_messages[channel_id])} total",
-        icon_url=message_data['author'].display_avatar.url
-    )
+    embed.set_footer(text=f"By {message_data['author'].name}", icon_url=message_data['author'].display_avatar.url)
     
     await interaction.response.send_message(embed=embed)
 
@@ -1120,19 +1114,19 @@ async def sp_slash(interaction: discord.Interaction, channel: discord.TextChanne
     channel_id = target_channel.id
     
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await interaction.response.send_message(f"âŒ No deleted messages found in {target_channel.mention}.", ephemeral=True)
+        await interaction.response.send_message(f"❌ No deleted messages found in {target_channel.mention}.", ephemeral=True)
         return
     
     normal_messages = [msg for msg in sniped_messages[channel_id] if not msg['is_filtered'] and not msg['has_links']]
     
     if not normal_messages:
-        await interaction.response.send_message(f"âŒ No normal deleted messages found in {target_channel.mention}.", ephemeral=True)
+        await interaction.response.send_message(f"❌ No normal deleted messages found in {target_channel.mention}.", ephemeral=True)
         return
     
     total_pages = math.ceil(len(normal_messages) / MESSAGES_PER_PAGE)
     
     if page < 1 or page > total_pages:
-        await interaction.response.send_message(f"âŒ Invalid page. Use 1-{total_pages}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Invalid page. Use 1-{total_pages}", ephemeral=True)
         return
     
     start_idx = (page - 1) * MESSAGES_PER_PAGE
@@ -1140,7 +1134,7 @@ async def sp_slash(interaction: discord.Interaction, channel: discord.TextChanne
     page_messages = normal_messages[start_idx:end_idx]
     
     embed = discord.Embed(
-        title=f"ðŸ“œ Normal Deleted Messages - {target_channel.name}",
+        title=f"📜 Normal Deleted Messages - {target_channel.name}",
         color=discord.Color.blue()
     )
     
@@ -1164,19 +1158,19 @@ async def spf_slash(interaction: discord.Interaction, channel: discord.TextChann
     channel_id = target_channel.id
     
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await interaction.response.send_message(f"âŒ No deleted messages found in {target_channel.mention}.", ephemeral=True)
+        await interaction.response.send_message(f"❌ No deleted messages found in {target_channel.mention}.", ephemeral=True)
         return
     
     filtered_messages = [msg for msg in sniped_messages[channel_id] if msg['is_filtered']]
     
     if not filtered_messages:
-        await interaction.response.send_message(f"âŒ No filtered/censored deleted messages found in {target_channel.mention}.", ephemeral=True)
+        await interaction.response.send_message(f"❌ No filtered/censored deleted messages found in {target_channel.mention}.", ephemeral=True)
         return
     
     total_pages = math.ceil(len(filtered_messages) / MESSAGES_PER_PAGE)
     
     if page < 1 or page > total_pages:
-        await interaction.response.send_message(f"âŒ Invalid page. Use 1-{total_pages}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Invalid page. Use 1-{total_pages}", ephemeral=True)
         return
     
     start_idx = (page - 1) * MESSAGES_PER_PAGE
@@ -1184,7 +1178,7 @@ async def spf_slash(interaction: discord.Interaction, channel: discord.TextChann
     page_messages = filtered_messages[start_idx:end_idx]
     
     embed = discord.Embed(
-        title=f"ðŸš« Filtered Deleted Messages - {target_channel.name}",
+        title=f"🚫 Filtered Deleted Messages - {target_channel.name}",
         color=discord.Color.red()
     )
     
@@ -1209,19 +1203,19 @@ async def spl_slash(interaction: discord.Interaction, channel: discord.TextChann
     channel_id = target_channel.id
     
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
-        await interaction.response.send_message(f"âŒ No deleted messages found in {target_channel.mention}.", ephemeral=True)
+        await interaction.response.send_message(f"❌ No deleted messages found in {target_channel.mention}.", ephemeral=True)
         return
     
     link_messages = [msg for msg in sniped_messages[channel_id] if msg['has_links']]
     
     if not link_messages:
-        await interaction.response.send_message(f"âŒ No deleted messages with links found in {target_channel.mention}.", ephemeral=True)
+        await interaction.response.send_message(f"❌ No deleted messages with links found in {target_channel.mention}.", ephemeral=True)
         return
     
     total_pages = math.ceil(len(link_messages) / MESSAGES_PER_PAGE)
     
     if page < 1 or page > total_pages:
-        await interaction.response.send_message(f"âŒ Invalid page. Use 1-{total_pages}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Invalid page. Use 1-{total_pages}", ephemeral=True)
         return
     
     start_idx = (page - 1) * MESSAGES_PER_PAGE
@@ -1229,7 +1223,7 @@ async def spl_slash(interaction: discord.Interaction, channel: discord.TextChann
     page_messages = link_messages[start_idx:end_idx]
     
     embed = discord.Embed(
-        title=f"ðŸ”— Deleted Messages with Links - {target_channel.name}",
+        title=f"🔗 Deleted Messages with Links - {target_channel.name}",
         color=discord.Color.purple()
     )
     
@@ -1251,12 +1245,12 @@ async def editsnipe_slash(interaction: discord.Interaction):
     channel_id = interaction.channel.id
     
     if channel_id not in edited_messages or not edited_messages[channel_id]:
-        await interaction.response.send_message("âŒ No edited messages found in this channel.", ephemeral=True)
+        await interaction.response.send_message("❌ No edited messages found in this channel.", ephemeral=True)
         return
     
     edit_data = edited_messages[channel_id][0]
     
-    embed = discord.Embed(title="ðŸ“ Edit Snipe", color=discord.Color.orange())
+    embed = discord.Embed(title="📝 Edit Snipe", color=discord.Color.orange())
     
     if edit_data['before_content']:
         embed.add_field(name="Before", value=edit_data['before_content'][:1024], inline=False)
@@ -1297,7 +1291,7 @@ async def giveaway_slash(
     
     # Check permissions
     if not can_host_giveaway(interaction.user):
-        await interaction.response.send_message("âŒ You don't have permission to host giveaways.", ephemeral=True)
+        await interaction.response.send_message("❌ You don't have permission to host giveaways.", ephemeral=True)
         return
     
     # FIXED: Acknowledge the interaction immediately
@@ -1306,7 +1300,7 @@ async def giveaway_slash(
     # Parse duration
     duration_seconds = parse_time_string(duration)
     if duration_seconds <= 0:
-        await interaction.followup.send("âŒ Invalid duration format. Use formats like: 1h, 30m, 5d, 60s")
+        await interaction.followup.send("❌ Invalid duration format. Use formats like: 1h, 30m, 5d, 60s")
         return
     
     # Set channel
@@ -1331,7 +1325,7 @@ async def giveaway_slash(
     
     # Create embed
     embed = discord.Embed(
-        title="ðŸŽ‰ Giveaway",
+        title="🎉 Giveaway",
         description=f"**Prize:** {prize}\n**Winners:** {winners}\n**Ends:** <t:{int(end_time.timestamp())}:R>",
         color=discord.Color.gold()
     )
@@ -1339,13 +1333,13 @@ async def giveaway_slash(
     if requirements:
         req_text = []
         if 'messages' in requirements:
-            req_text.append(f"â€¢ {requirements['messages']} messages")
+            req_text.append(f"• {requirements['messages']} messages")
         if 'time_in_server' in requirements:
-            req_text.append(f"â€¢ {format_duration(requirements['time_in_server'])} in server")
+            req_text.append(f"• {format_duration(requirements['time_in_server'])} in server")
         if 'required_role' in requirements:
-            req_text.append(f"â€¢ Role: {requirements['required_role']}")
+            req_text.append(f"• Role: {requirements['required_role']}")
         if 'blacklisted_role' in requirements:
-            req_text.append(f"â€¢ Cannot have role: {requirements['blacklisted_role']}")
+            req_text.append(f"• Cannot have role: {requirements['blacklisted_role']}")
         
         embed.add_field(name="Requirements", value="\n".join(req_text), inline=False)
     
@@ -1369,7 +1363,7 @@ async def giveaway_slash(
         'requirements': requirements
     }
     
-    await interaction.followup.send(f"âœ… Giveaway created in {channel.mention}!")
+    await interaction.followup.send(f"✅ Giveaway created in {channel.mention}!")
 
 # NEW: Giveaway host role command
 @bot.tree.command(name="giveaway_host", description="Set roles that can host giveaways")
@@ -1380,7 +1374,7 @@ async def giveaway_host_slash(interaction: discord.Interaction, role: discord.Ro
     
     # Check permissions
     if not (is_bot_owner(interaction.user.id) or interaction.user.guild_permissions.administrator):
-        await interaction.response.send_message("âŒ You need administrator permissions to set giveaway host roles.", ephemeral=True)
+        await interaction.response.send_message("❌ You need administrator permissions to set giveaway host roles.", ephemeral=True)
         return
     
     guild_id = interaction.guild.id
@@ -1390,9 +1384,9 @@ async def giveaway_host_slash(interaction: discord.Interaction, role: discord.Ro
     
     if role.id not in giveaway_host_roles[guild_id]:
         giveaway_host_roles[guild_id].append(role.id)
-        await interaction.response.send_message(f"âœ… {role.mention} can now host giveaways!")
+        await interaction.response.send_message(f"✅ {role.mention} can now host giveaways!")
     else:
-        await interaction.response.send_message(f"âŒ {role.mention} is already a giveaway host role.", ephemeral=True)
+        await interaction.response.send_message(f"❌ {role.mention} is already a giveaway host role.", ephemeral=True)
 
 @bot.command(name="gw")
 @not_blocked()
@@ -1401,22 +1395,22 @@ async def giveaway_reroll(ctx, message_id: int = None):
     
     # Check permissions
     if not (is_bot_owner(ctx.author.id) or ctx.author.guild_permissions.administrator or can_host_giveaway(ctx.author)):
-        await ctx.send("âŒ You don't have permission to reroll giveaways.")
+        await ctx.send("❌ You don't have permission to reroll giveaways.")
         return
     
     if not message_id:
-        await ctx.send("âŒ Please provide a message ID: `,gw 123456789`")
+        await ctx.send("❌ Please provide a message ID: `,gw 123456789`")
         return
     
     if message_id not in active_giveaways:
-        await ctx.send("âŒ Giveaway not found or already ended.")
+        await ctx.send("❌ Giveaway not found or already ended.")
         return
     
     giveaway = active_giveaways[message_id]
     participants = giveaway['participants']
     
     if not participants:
-        await ctx.send("âŒ No participants in this giveaway.")
+        await ctx.send("❌ No participants in this giveaway.")
         return
     
     try:
@@ -1428,16 +1422,16 @@ async def giveaway_reroll(ctx, message_id: int = None):
         
         if new_winner:
             embed = discord.Embed(
-                title="ðŸŽ‰ Giveaway Rerolled!",
+                title="🎉 Giveaway Rerolled!",
                 description=f"**New Winner:** {new_winner.mention}\n**Prize:** {giveaway['prize']}",
                 color=discord.Color.green()
             )
             embed.set_footer(text=f"Rerolled by {ctx.author.name}")
             await message.edit(embed=embed)
-            await ctx.send(f"âœ… Giveaway rerolled! New winner: {new_winner.mention}")
+            await ctx.send(f"✅ Giveaway rerolled! New winner: {new_winner.mention}")
         
     except Exception as e:
-        await ctx.send(f"âŒ Error rerolling giveaway: {str(e)}")
+        await ctx.send(f"❌ Error rerolling giveaway: {str(e)}")
 
 @bot.tree.command(name="gw", description="Reroll a giveaway winner")
 @app_commands.describe(message_id="Message ID of the giveaway")
@@ -1446,24 +1440,24 @@ async def gw_slash(interaction: discord.Interaction, message_id: str):
     """Slash command to reroll giveaway"""
     
     if not (is_bot_owner(interaction.user.id) or interaction.user.guild_permissions.administrator or can_host_giveaway(interaction.user)):
-        await interaction.response.send_message("âŒ You don't have permission to reroll giveaways.", ephemeral=True)
+        await interaction.response.send_message("❌ You don't have permission to reroll giveaways.", ephemeral=True)
         return
     
     try:
         msg_id = int(message_id)
     except ValueError:
-        await interaction.response.send_message("âŒ Invalid message ID format.", ephemeral=True)
+        await interaction.response.send_message("❌ Invalid message ID format.", ephemeral=True)
         return
     
     if msg_id not in active_giveaways:
-        await interaction.response.send_message("âŒ Giveaway not found or already ended.", ephemeral=True)
+        await interaction.response.send_message("❌ Giveaway not found or already ended.", ephemeral=True)
         return
     
     giveaway = active_giveaways[msg_id]
     participants = giveaway['participants']
     
     if not participants:
-        await interaction.response.send_message("âŒ No participants in this giveaway.", ephemeral=True)
+        await interaction.response.send_message("❌ No participants in this giveaway.", ephemeral=True)
         return
     
     try:
@@ -1475,16 +1469,16 @@ async def gw_slash(interaction: discord.Interaction, message_id: str):
         
         if new_winner:
             embed = discord.Embed(
-                title="ðŸŽ‰ Giveaway Rerolled!",
+                title="🎉 Giveaway Rerolled!",
                 description=f"**New Winner:** {new_winner.mention}\n**Prize:** {giveaway['prize']}",
                 color=discord.Color.green()
             )
             embed.set_footer(text=f"Rerolled by {interaction.user.name}")
             await message.edit(embed=embed)
-            await interaction.response.send_message(f"âœ… Giveaway rerolled! New winner: {new_winner.mention}")
+            await interaction.response.send_message(f"✅ Giveaway rerolled! New winner: {new_winner.mention}")
         
     except Exception as e:
-        await interaction.response.send_message(f"âŒ Error rerolling giveaway: {str(e)}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Error rerolling giveaway: {str(e)}", ephemeral=True)
 
 # OTHER COMMANDS
 
@@ -1510,7 +1504,7 @@ async def ping_command(ctx):
     """Show bot latency"""
     latency = round(bot.latency * 1000)
     embed = discord.Embed(
-        title="ðŸ“ Pong!",
+        title="🏓 Pong!",
         description=f"Bot latency: {latency}ms",
         color=discord.Color.green()
     )
@@ -1522,7 +1516,7 @@ async def ping_slash(interaction: discord.Interaction):
     """Slash command ping"""
     latency = round(bot.latency * 1000)
     embed = discord.Embed(
-        title="ðŸ“ Pong!",
+        title="🏓 Pong!",
         description=f"Bot latency: {latency}ms",
         color=discord.Color.green()
     )
@@ -1534,15 +1528,15 @@ async def ping_slash(interaction: discord.Interaction):
 async def prefix_slash(interaction: discord.Interaction, new_prefix: str):
     """Change server prefix"""
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("âŒ You need administrator permissions to change the prefix.", ephemeral=True)
+        await interaction.response.send_message("❌ You need administrator permissions to change the prefix.", ephemeral=True)
         return
     
     if len(new_prefix) > 5:
-        await interaction.response.send_message("âŒ Prefix cannot be longer than 5 characters.", ephemeral=True)
+        await interaction.response.send_message("❌ Prefix cannot be longer than 5 characters.", ephemeral=True)
         return
     
     custom_prefixes[interaction.guild.id] = new_prefix
-    await interaction.response.send_message(f"âœ… Server prefix changed to `{new_prefix}`")
+    await interaction.response.send_message(f"✅ Server prefix changed to `{new_prefix}`")
 
 @bot.command(name="prefix")
 @not_blocked()
@@ -1554,15 +1548,15 @@ async def prefix_command(ctx, new_prefix: str = None):
         return
     
     if not ctx.author.guild_permissions.administrator:
-        await ctx.send("âŒ You need administrator permissions to change the prefix.")
+        await ctx.send("❌ You need administrator permissions to change the prefix.")
         return
     
     if len(new_prefix) > 5:
-        await ctx.send("âŒ Prefix cannot be longer than 5 characters.")
+        await ctx.send("❌ Prefix cannot be longer than 5 characters.")
         return
     
     custom_prefixes[ctx.guild.id] = new_prefix
-    await ctx.send(f"âœ… Server prefix changed to `{new_prefix}`")
+    await ctx.send(f"✅ Server prefix changed to `{new_prefix}`")
 
 # Run the bot
 if __name__ == "__main__":
