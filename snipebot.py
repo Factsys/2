@@ -1126,9 +1126,9 @@ async def slash_create(interaction: discord.Interaction,
     
     embed_color = parse_color(color) if color else discord.Color.default()
     
-    # Create clean embed with only the context (bold and bigger)
+    # Create clean embed with context as description (larger, more readable text)
     embed = discord.Embed(
-        description=f"**{context}**",  # Make text bold and bigger
+        description=f"**{context}**",  # Use description for larger, more readable text
         color=embed_color
     )
     
