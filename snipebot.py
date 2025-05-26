@@ -2014,7 +2014,7 @@ async def giveaway(interaction: discord.Interaction, duration: str, winners: int
     duration_seconds = int(timedelta(seconds=int(duration[:-1]) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[duration[-1]]).total_seconds())
     end_time = datetime.utcnow().timestamp() + duration_seconds
     channel = channel or interaction.channel
-    embed = discord.Embed(title="ðŸŽ‰ GIVEAWAY ðŸŽ‰", description=f"**Prize:** {prize}
+    embed = discord.Embed(title=" GIVEAWAY ", description=f"**Prize:** {prize}
 **Ends:** <t:{int(end_time)}:R>", color=discord.Color.gold())
     msg = await channel.send(embed=embed, view=GiveawayView(msg_id := random.randint(100000, 999999)))
     GiveawayView(msg_id).giveaway_id = msg_id
