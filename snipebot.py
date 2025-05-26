@@ -2030,3 +2030,16 @@ async def reroll(ctx, msg_id: int):
     await ctx.send(f"New winner: <@{winner}>")
 
 # === Updated Features End ===
+# Run the bot
+if __name__ == "__main__":
+    token = os.getenv('DISCORD_BOT_TOKEN')
+    if not token:
+        print("Error: DISCORD_BOT_TOKEN environment variable not set")
+        exit(1)
+    
+    try:
+        bot.run(token)
+    except discord.LoginFailure:
+        print("Error: Invalid bot token")
+    except Exception as e:
+        print(f"Error starting bot: {e}")
