@@ -13,6 +13,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Optional, List, Union
 import logging
+import enhanced_commands.py
 
 # Set up logging for debugging
 logging.basicConfig(level=logging.INFO)
