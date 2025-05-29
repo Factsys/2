@@ -2459,3 +2459,20 @@ async def prefix_slash(interaction: discord.Interaction, new_prefix: str):
 # Run the bot
 if __name__ == "__main__":
     bot.run(os.getenv('DISCORD_TOKEN'))
+
+# Import and setup enhanced commands
+try:
+    from enhanced_commands import setup_enhanced_commands
+    setup_enhanced_commands(
+        bot, 
+        sniped_messages, 
+        MESSAGES_PER_PAGE, 
+        detect_media_type, 
+        get_media_url, 
+        is_offensive_content, 
+        is_user_blocked
+    )
+    print("✅ Enhanced commands loaded!")
+except Exception as e:
+    print(f"❌ Error loading enhanced commands: {e}")
+
