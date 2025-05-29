@@ -1,6 +1,6 @@
-
-
-# We'll get the bot instance and other variables when this file is imported
+import discord
+from discord.ext import commands
+import math
 
 def setup_enhanced_commands(bot_instance, sniped_messages_dict, messages_per_page, detect_media_func, get_media_url_func, is_offensive_content_func, is_user_blocked_func):
     """Setup function to register commands with the bot instance"""
@@ -97,7 +97,6 @@ def setup_enhanced_commands(bot_instance, sniped_messages_dict, messages_per_pag
             author_name = msg['author'].display_name
             content = msg['content'] or "*No text content*"
             
-            # Show content with source
             content_lines.append(f"**{i}. {author_name}**")
             content_lines.append(f"{content}")
             content_lines.append(f"📍 {msg['source_info']}")
@@ -218,7 +217,7 @@ def setup_enhanced_commands(bot_instance, sniped_messages_dict, messages_per_pag
         content_lines = []
         for i, msg in enumerate(page_messages, start=start_idx + 1):
             author_name = msg['author'].display_name
-            content = msg['content'] or "*No text content*"
+            content = msg['content'] or ""
             
             # Extract links
             links = []
@@ -228,12 +227,13 @@ def setup_enhanced_commands(bot_instance, sniped_messages_dict, messages_per_pag
             
             if msg.get('content'):
                 media_urls = get_media_url(msg['content'], [])
-                for media in media_urls:
-                    if media.get('source') == 'embedded':
-                        links.append(media['url'])
+                if media_urls:
+                    for media in media_urls:
+                        if media.get('source') == 'embedded':
+                            links.append(media['url'])
             
             content_lines.append(f"**{i}. {author_name}**")
-            if content and content != "*No text content*":
+            if content and content.strip():
                 content_lines.append(content)
             
             for link in links:
