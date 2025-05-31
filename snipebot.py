@@ -874,59 +874,40 @@ class ReactionRoleView(discord.ui.View):
         except Exception as e:
             await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
-# Help View
-class HelpPaginationView(discord.ui.View):
+# --- Updated Help Views ---
+class MemberHelpPaginationView(discord.ui.View):
     def __init__(self, timeout=300):
         super().__init__(timeout=timeout)
         self.current_page = 0
         self.pages = [
             {
-                "title": "📜 FACTSY Commands - Page 1",
+                "title": "📜 FACTSY Member Commands - Page 1",
                 "fields": [
-                    ("**Message Tracking**", "`,snipe` `,s [1-100]` `/snipe` - Show deleted message by number\n`,editsnipe` `,es` `/editsnipe` - Show last edited message\n`,sp [channel] [page]` `/sp` - List normal deleted messages\n`,spf [channel] [page]` `/spf` - Show filtered/censored messages only\n`,spl [channel] [page]` `/spl` - Show deleted links only", False),
-                    ("**Moderation**", "`,namelock` `,nl` `/namelock` - Lock user's nickname\n`,unl` `/unl` - Unlock user's nickname\n`,rename` `,re` `/rename` - Change user's nickname\n`,say` `/say` - Send normal message\n`,saywb` `/saywb` - Send embed message", False)
+                    ("**Message Tracking**", ",snipe <n> — Show deleted message by number\n,sp <#channel> <page> — List normal deleted messages\n,spl <#channel> <page> — Show deleted links only", False),
+                    ("**Info**", ",help < > — Show this help\n,ping — Show bot latency", False)
                 ]
             },
             {
-                "title": "📜 FACTSY Commands - Page 2", 
+                "title": "📜 FACTSY Member Commands - Page 2",
                 "fields": [
-                    ("**Giveaways**", "`,gw [id]` `/gw` - Reroll giveaway winner\n`/giveaway` - Create advanced giveaway\n`/giveaway_host [@role]` - Set giveaway host roles", False),
-                    ("**Management**", "`,block` `/block` - Block user from bot\n`,mess` `/mess` - DM user globally\n`,role` `/role` - Add role to user\n`,namelockimmune` `,nli` `/namelockimmune` - Make user immune", False)
-                ]
-            },
-            {
-                "title": "📜 FACTSY Commands - Page 3",
-                "fields": [
-                    ("**Reaction Roles**", "`,create` `/create` - Create reaction roles (1-6 options)", False),
-                    ("**Bot Features**", "`,manage` `/manage` - Bot management panel\n`/unblock` - Unblock user from bot\n`/ping` - Show bot latency\n`/prefix` - Change server prefix", False)
-                ]
-            },
-            {
-                "title": "📜 FACTSY Commands - Page 4",
-                "fields": [
-                    ("**Info**", "All commands support both prefix and slash (/) versions\nModerators can use most commands\nBlocked users cannot use any bot functions\nSeconds support added to durations (e.g., 30s)", False),
-                    ("**Usage Examples**", "`,s 5` - Show 5th deleted message\n`/saywb #general My Title My Description red` - Send embed\n`/prefix !` - Change prefix to !\n`,sp #general` - Show normal deleted messages in channel", False)
+                    ("**Fun/Utility**", ",editsnipe — Show last edited message\n,spa < > — All deleted messages (all channels)\n,spla < > — All deleted links (all channels)", False),
+                    ("**Usage**", "Use < > to go through pages.", False)
                 ]
             }
         ]
         self.total_pages = len(self.pages)
         self.update_buttons()
-    
     def update_buttons(self):
         self.previous_button.disabled = self.current_page == 0
         self.next_button.disabled = self.current_page >= self.total_pages - 1
-    
     def get_embed(self):
         page_data = self.pages[self.current_page]
         embed = discord.Embed(title=page_data["title"], color=discord.Color.blue())
-        
         for name, value, inline in page_data["fields"]:
             embed.add_field(name=name, value=value, inline=inline)
-        
-        embed.set_footer(text=f"Page {self.current_page + 1} of {self.total_pages} | Made with ❤ | Werrzzzy")
+        embed.set_footer(text=f"Page {self.current_page + 1} of {self.total_pages} | Use < > to go through pages")
         return embed
-    
-    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="<", style=discord.ButtonStyle.secondary)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page > 0:
             self.current_page -= 1
@@ -934,8 +915,7 @@ class HelpPaginationView(discord.ui.View):
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
         else:
             await interaction.response.defer()
-    
-    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji=">", style=discord.ButtonStyle.secondary)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page < self.total_pages - 1:
             self.current_page += 1
@@ -943,6 +923,97 @@ class HelpPaginationView(discord.ui.View):
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
         else:
             await interaction.response.defer()
+
+class ModHelpPaginationView(discord.ui.View):
+    def __init__(self, timeout=300):
+        super().__init__(timeout=timeout)
+        self.current_page = 0
+        self.pages = [
+            {
+                "title": "🛡️ FACTSY Mod Commands - Page 1",
+                "fields": [
+                    ("**Moderation**", ",namelock <@user> <name>\n,unl <@user>\n,rename <@user> <name>\n,block <@user>\n,role <@user> <@role>\n,namelockimmune <@user>", False),
+                    ("**Giveaways**", ",giveaway <...>\n,gw <id>\n,giveaway_host <@role>", False)
+                ]
+            },
+            {
+                "title": "🛡️ FACTSY Mod Commands - Page 2",
+                "fields": [
+                    ("**Management**", ",manage\n,perm <@user>\n,permess <@user>\n,ms <@role>", False),
+                    ("**Utility**", ",say <msg>\n,saywb <#channel> <title> <desc> <color>\n,create <title> <color> <emoji> <role> ...", False)
+                ]
+            },
+            {
+                "title": "🛡️ FACTSY Mod Commands - Page 3",
+                "fields": [
+                    ("**Tracking**", ",spfa < >\n,spf <#channel> <page>\n,sp <#channel> <page>\n,spa < >\n,spla < >\n,editsnipe\n,snipe <n>", False),
+                    ("**Info**", ",helpm < > — Show this help\n,ping\n,prefix <new>\n,help < >", False)
+                ]
+            }
+        ]
+        self.total_pages = len(self.pages)
+        self.update_buttons()
+    def update_buttons(self):
+        self.previous_button.disabled = self.current_page == 0
+        self.next_button.disabled = self.current_page >= self.total_pages - 1
+    def get_embed(self):
+        page_data = self.pages[self.current_page]
+        embed = discord.Embed(title=page_data["title"], color=discord.Color.orange())
+        for name, value, inline in page_data["fields"]:
+            embed.add_field(name=name, value=value, inline=inline)
+        embed.set_footer(text=f"Page {self.current_page + 1} of {self.total_pages} | Use < > to go through pages")
+        return embed
+    @discord.ui.button(emoji="<", style=discord.ButtonStyle.secondary)
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        else:
+            await interaction.response.defer()
+    @discord.ui.button(emoji=">", style=discord.ButtonStyle.secondary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        else:
+            await interaction.response.defer()
+
+# --- Help commands ---
+@bot.command(name='help')
+@not_blocked()
+async def help_command(ctx):
+    view = MemberHelpPaginationView()
+    embed = view.get_embed()
+    await ctx.send(embed=embed, view=view)
+
+@bot.command(name='helpm')
+@not_blocked()
+async def helpm_command(ctx):
+    if not (ctx.author.guild_permissions.manage_messages or ctx.author.guild_permissions.administrator or is_bot_owner(ctx.author.id)):
+        await ctx.send("❌ Only mods/admins/owners can use this command!")
+        return
+    view = ModHelpPaginationView()
+    embed = view.get_embed()
+    await ctx.send(embed=embed, view=view)
+
+@bot.tree.command(name="help", description="Show member help")
+@check_not_blocked()
+async def help_slash(interaction: discord.Interaction):
+    view = MemberHelpPaginationView()
+    embed = view.get_embed()
+    await interaction.response.send_message(embed=embed, view=view)
+
+@bot.tree.command(name="helpm", description="Show mod help (mods/admins/owners only)")
+@check_not_blocked()
+async def helpm_slash(interaction: discord.Interaction):
+    if not (interaction.user.guild_permissions.manage_messages or interaction.user.guild_permissions.administrator or is_bot_owner(interaction.user.id)):
+        await interaction.response.send_message("❌ Only mods/admins/owners can use this command!", ephemeral=True)
+        return
+    view = ModHelpPaginationView()
+    embed = view.get_embed()
+    await interaction.response.send_message(embed=embed, view=view)
 
 # Bot events
 @bot.event
@@ -1158,15 +1229,6 @@ async def end_giveaway(message_id):
 async def before_check_giveaways():
     await bot.wait_until_ready()
 
-# Prefix commands
-@bot.command(name='help', aliases=['h'])
-@not_blocked()
-async def help_command(ctx):
-    """Show bot help"""
-    view = HelpPaginationView()
-    embed = view.get_embed()
-    await ctx.send(embed=embed, view=view)
-
 @bot.command(name='snipe', aliases=['s'])
 @not_blocked()
 async def snipe_command(ctx, number: int = 1):
@@ -1237,8 +1299,11 @@ async def editsnipe_command(ctx):
 
 @bot.command(name='sp')
 @not_blocked()
-async def snipe_pages_command(ctx, channel: discord.TextChannel = None, page: int = 1):
-    target_channel = channel or ctx.channel
+async def snipe_pages_command(ctx, channel: str = None, page: int = 1):
+    target_channel = find_channel_robust(ctx.guild, channel) if channel else ctx.channel
+    if not target_channel:
+        await ctx.send(f"❌ Channel `{channel}` not found or ambiguous!")
+        return
     channel_id = target_channel.id
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
         await ctx.send("❌ No deleted messages found in that channel!")
@@ -1264,10 +1329,9 @@ async def snipe_pages_command(ctx, channel: discord.TextChannel = None, page: in
         content = msg['content'] or "*No text content*"
         if is_offensive_content(msg['content']):
             content = filter_content(msg['content'])
-        user = msg['author']
         embed.add_field(
-            name=f"{i}. {user.mention}",
-            value=f"{user.mention}\n{content}",
+            name=f"{i}. {msg['author'].mention}",
+            value=f"{msg['author'].mention}\n{content}",
             inline=False
         )
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(normal_messages)} total messages")
@@ -1288,10 +1352,9 @@ async def snipe_pages_command(ctx, channel: discord.TextChannel = None, page: in
                 content = msg['content'] or "*No text content*"
                 if is_offensive_content(msg['content']):
                     content = filter_content(msg['content'])
-                user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {user.mention}",
-                    value=f"{user.mention}\n{content}",
+                    name=f"{i}. {msg['author'].mention}",
+                    value=f"{msg['author'].mention}\n{content}",
                     inline=False
                 )
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(normal_messages)} total messages")
@@ -1305,8 +1368,11 @@ async def snipe_pages_command(ctx, channel: discord.TextChannel = None, page: in
 
 @bot.command(name='spf')
 @not_blocked()
-async def snipe_filtered_command(ctx, channel: discord.TextChannel = None, page: int = 1):
-    target_channel = channel or ctx.channel
+async def snipe_filtered_command(ctx, channel: str = None, page: int = 1):
+    target_channel = find_channel_robust(ctx.guild, channel) if channel else ctx.channel
+    if not target_channel:
+        await ctx.send(f"❌ Channel `{channel}` not found or ambiguous!")
+        return
     channel_id = target_channel.id
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
         await ctx.send("❌ No deleted messages found in that channel!")
@@ -1329,12 +1395,10 @@ async def snipe_filtered_command(ctx, channel: discord.TextChannel = None, page:
         user = page_messages[0]['author']
         embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
     for i, msg in enumerate(page_messages, start=start_idx + 1):
-        # Show original unfiltered content for ,spf
         content = msg['original_content'] or "*No text content*"
-        user = msg['author']
         embed.add_field(
-            name=f"{i}. {user.mention}",
-            value=f"{user.mention}\n{content}",
+            name=f"{i}. {msg['author'].mention}",
+            value=f"{msg['author'].mention}\n{content}",
             inline=False
         )
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(filtered_messages)} total messages")
@@ -1353,10 +1417,9 @@ async def snipe_filtered_command(ctx, channel: discord.TextChannel = None, page:
                 p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
             for i, msg in enumerate(p_page_messages, start=p_start_idx + 1):
                 content = msg['original_content'] or "*No text content*"
-                user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {user.mention}",
-                    value=f"{user.mention}\n{content}",
+                    name=f"{i}. {msg['author'].mention}",
+                    value=f"{msg['author'].mention}\n{content}",
                     inline=False
                 )
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(filtered_messages)} total messages")
@@ -1370,8 +1433,11 @@ async def snipe_filtered_command(ctx, channel: discord.TextChannel = None, page:
 
 @bot.command(name='spl')
 @not_blocked()
-async def snipe_links_command(ctx, channel: discord.TextChannel = None, page: int = 1):
-    target_channel = channel or ctx.channel
+async def snipe_links_command(ctx, channel: str = None, page: int = 1):
+    target_channel = find_channel_robust(ctx.guild, channel) if channel else ctx.channel
+    if not target_channel:
+        await ctx.send(f"❌ Channel `{channel}` not found or ambiguous!")
+        return
     channel_id = target_channel.id
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
         await ctx.send("❌ No deleted messages found in that channel!")
@@ -1397,10 +1463,9 @@ async def snipe_links_command(ctx, channel: discord.TextChannel = None, page: in
         content = msg['content'] or "*No text content*"
         if is_offensive_content(msg['content']):
             content = filter_content(msg['content'])
-        user = msg['author']
         embed.add_field(
-            name=f"{i}. {user.mention}",
-            value=f"{user.mention}\n{content}",
+            name=f"{i}. {msg['author'].mention}",
+            value=f"{msg['author'].mention}\n{content}",
             inline=False
         )
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(link_messages)} total messages")
@@ -1421,10 +1486,9 @@ async def snipe_links_command(ctx, channel: discord.TextChannel = None, page: in
                 content = msg['content'] or "*No text content*"
                 if is_offensive_content(msg['content']):
                     content = filter_content(msg['content'])
-                user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {user.mention}",
-                    value=f"{user.mention}\n{content}",
+                    name=f"{i}. {msg['author'].mention}",
+                    value=f"{msg['author'].mention}\n{content}",
                     inline=False
                 )
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(link_messages)} total messages")
@@ -1878,10 +1942,18 @@ async def giveaway_reroll_command(ctx, message_id: int):
 @not_blocked()
 async def message_user_command(ctx, user_search: str, *, message):
     """Send a DM to a user globally"""
-    if not is_bot_owner(ctx.author.id):
-        await ctx.send("❌ Only the bot owner can use this command!")
+    allowed = False
+    if is_bot_owner(ctx.author.id):
+        allowed = True
+    elif ctx.author.id in mess_permitted_users:
+        allowed = True
+    elif ctx.guild and ctx.guild.id in mess_permitted_roles:
+        user_role_ids = [role.id for role in ctx.author.roles]
+        if any(rid in mess_permitted_roles[ctx.guild.id] for rid in user_role_ids):
+            allowed = True
+    if not allowed:
+        await ctx.send("❌ Only the bot owner or permitted users/roles can use this command!")
         return
-    
     # Try to find user by ID first, then by name
     target_user = None
     try:
@@ -1889,11 +1961,9 @@ async def message_user_command(ctx, user_search: str, *, message):
         target_user = bot.get_user(user_id)
     except ValueError:
         target_user = find_user_globally(user_search)
-    
     if not target_user:
         await ctx.send("❌ User not found!")
         return
-    
     try:
         await target_user.send(message)
         await ctx.send(f"✅ Message sent to **{target_user.name}**")
@@ -1904,17 +1974,19 @@ async def message_user_command(ctx, user_search: str, *, message):
 
 @bot.command(name='role')
 @not_blocked()
-async def add_role_command(ctx, member: discord.Member, *, role_name):
-    """Add a role to a user"""
-    # Allow if user has manage_roles, is bot owner, or is in permitted_users
+async def add_role_command(ctx, member_search: str, *, role_search: str):
+    """Add a role to a user (robust lookup for user and role)"""
     if not (ctx.author.guild_permissions.manage_roles or is_bot_owner(ctx.author.id) or ctx.author.id in permitted_users):
         await ctx.send("❌ You don't have permission to manage roles!")
         return
-    role = discord.utils.get(ctx.guild.roles, name=role_name)
-    if not role:
-        await ctx.send(f"❌ Role `{role_name}` not found!")
+    member = find_member_robust(ctx.guild, member_search)
+    if not member:
+        await ctx.send(f"❌ User `{member_search}` not found or ambiguous!")
         return
-    # Only allow if the command user is above the target role
+    role = find_role_robust(ctx.guild, role_search)
+    if not role:
+        await ctx.send(f"❌ Role `{role_search}` not found or ambiguous!")
+        return
     if ctx.author.top_role <= role and not is_bot_owner(ctx.author.id):
         await ctx.send("❌ You can only give roles lower than your highest role!")
         return
@@ -2425,8 +2497,8 @@ async def giveaway_slash(interaction: discord.Interaction,
                         duration: str,
                         winners: int = 1,
                         message_req: int = None,
-                        role_req: discord.Role = None,
-                        blacklisted_role: discord.Role = None,
+                        role_req: str = None,
+                        blacklisted_role: str = None,
                         image: str = None):
     """Create an advanced giveaway with requirements and image support"""
     if not (is_bot_owner(interaction.user.id) or 
@@ -2455,10 +2527,18 @@ async def giveaway_slash(interaction: discord.Interaction,
         requirements['messages'] = message_req
     
     if role_req:
-        requirements['required_role'] = role_req.name
+        resolved_role = find_role_robust(interaction.guild, role_req)
+        if not resolved_role:
+            await interaction.response.send_message(f"❌ Required role `{role_req}` not found or ambiguous!", ephemeral=True)
+            return
+        requirements['required_role'] = resolved_role.name
     
     if blacklisted_role:
-        requirements['blacklisted_role'] = blacklisted_role.name
+        resolved_blacklist = find_role_robust(interaction.guild, blacklisted_role)
+        if not resolved_blacklist:
+            await interaction.response.send_message(f"❌ Blacklisted role `{blacklisted_role}` not found or ambiguous!", ephemeral=True)
+            return
+        requirements['blacklisted_role'] = resolved_blacklist.name
     
     # Calculate end time
     end_time = datetime.utcnow() + timedelta(seconds=duration_seconds)
@@ -2582,15 +2662,17 @@ async def mess_slash(interaction: discord.Interaction, user: discord.User, messa
 
 @bot.tree.command(name="role", description="Add a role to a user")
 @check_not_blocked()
-async def role_slash(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
-    """Add a role to a user"""
+async def role_slash(interaction: discord.Interaction, member: discord.Member, role: str):
     if not (interaction.user.guild_permissions.manage_roles or is_bot_owner(interaction.user.id)):
         await interaction.response.send_message("❌ You don't have permission to manage roles!", ephemeral=True)
         return
-    
+    resolved_role = find_role_robust(interaction.guild, role)
+    if not resolved_role:
+        await interaction.response.send_message(f"❌ Role `{role}` not found or ambiguous!", ephemeral=True)
+        return
     try:
-        await member.add_roles(role, reason=f"Added by {interaction.user}")
-        await interaction.response.send_message(f"✅ Added role **{role.name}** to **{member.display_name}**")
+        await member.add_roles(resolved_role, reason=f"Added by {interaction.user}")
+        await interaction.response.send_message(f"✅ Added role **{resolved_role.name}** to **{member.display_name}**")
     except discord.Forbidden:
         await interaction.response.send_message("❌ I don't have permission to manage this role!", ephemeral=True)
     except Exception as e:
@@ -2664,6 +2746,37 @@ async def perm_slash(interaction: discord.Interaction, user: discord.User):
     else:
         permitted_users.add(user.id)
         await interaction.response.send_message(f"✅ Granted full command access to {user.mention}", ephemeral=True)
+
+# Add sets for mess command permissions
+mess_permitted_users = set()  # user IDs
+mess_permitted_roles = {}     # {guild_id: set(role_ids)}
+
+@bot.tree.command(name="permess", description="Toggle access to ,mess for a user")
+async def permess_slash(interaction: discord.Interaction, user: discord.User):
+    if not is_bot_owner(interaction.user.id):
+        await interaction.response.send_message("❌ Only the bot owner can use this command!", ephemeral=True)
+        return
+    if user.id in mess_permitted_users:
+        mess_permitted_users.remove(user.id)
+        await interaction.response.send_message(f"✅ Revoked ,mess access from {user.mention}", ephemeral=True)
+    else:
+        mess_permitted_users.add(user.id)
+        await interaction.response.send_message(f"✅ Granted ,mess access to {user.mention}", ephemeral=True)
+
+@bot.tree.command(name="ms", description="Toggle access to ,mess for a role in this server")
+async def ms_slash(interaction: discord.Interaction, role: discord.Role):
+    if not is_bot_owner(interaction.user.id):
+        await interaction.response.send_message("❌ Only the bot owner can use this command!", ephemeral=True)
+        return
+    guild_id = interaction.guild.id
+    if guild_id not in mess_permitted_roles:
+        mess_permitted_roles[guild_id] = set()
+    if role.id in mess_permitted_roles[guild_id]:
+        mess_permitted_roles[guild_id].remove(role.id)
+        await interaction.response.send_message(f"✅ Revoked ,mess access from {role.mention}", ephemeral=True)
+    else:
+        mess_permitted_roles[guild_id].add(role.id)
+        await interaction.response.send_message(f"✅ Granted ,mess access to {role.mention}", ephemeral=True)
 
 # Run the bot
 if __name__ == "__main__":
