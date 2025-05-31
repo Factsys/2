@@ -1251,7 +1251,7 @@ async def snipe_pages_command(ctx, channel: discord.TextChannel = None, page: in
         user = msg['author']
         embed.add_field(
             name=f"{i}. {user.mention}",
-            value=content,
+            value=f"{user.mention}\n{content}",
             inline=False
         )
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(normal_messages)} total messages")
@@ -1275,7 +1275,7 @@ async def snipe_pages_command(ctx, channel: discord.TextChannel = None, page: in
                 user = msg['author']
                 p_embed.add_field(
                     name=f"{i}. {user.mention}",
-                    value=content,
+                    value=f"{user.mention}\n{content}",
                     inline=False
                 )
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(normal_messages)} total messages")
@@ -1318,7 +1318,7 @@ async def snipe_filtered_command(ctx, channel: discord.TextChannel = None, page:
         user = msg['author']
         embed.add_field(
             name=f"{i}. {user.mention}",
-            value=content,
+            value=f"{user.mention}\n{content}",
             inline=False
         )
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(filtered_messages)} total messages")
@@ -1340,7 +1340,7 @@ async def snipe_filtered_command(ctx, channel: discord.TextChannel = None, page:
                 user = msg['author']
                 p_embed.add_field(
                     name=f"{i}. {user.mention}",
-                    value=content,
+                    value=f"{user.mention}\n{content}",
                     inline=False
                 )
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(filtered_messages)} total messages")
@@ -1384,7 +1384,7 @@ async def snipe_links_command(ctx, channel: discord.TextChannel = None, page: in
         user = msg['author']
         embed.add_field(
             name=f"{i}. {user.mention}",
-            value=content,
+            value=f"{user.mention}\n{content}",
             inline=False
         )
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(link_messages)} total messages")
@@ -1408,7 +1408,7 @@ async def snipe_links_command(ctx, channel: discord.TextChannel = None, page: in
                 user = msg['author']
                 p_embed.add_field(
                     name=f"{i}. {user.mention}",
-                    value=content,
+                    value=f"{user.mention}\n{content}",
                     inline=False
                 )
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(link_messages)} total messages")
@@ -1458,7 +1458,7 @@ async def snipe_all_command(ctx, page: int = 1):
         user = msg['author']
         embed.add_field(
             name=f"{i}. {user.mention}",
-            value=content,
+            value=f"{user.mention}\n{content}",
             inline=False
         )
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(all_msgs)} total messages")
@@ -1486,7 +1486,7 @@ async def snipe_all_command(ctx, page: int = 1):
                 user = msg['author']
                 p_embed.add_field(
                     name=f"{i}. {user.mention}",
-                    value=content,
+                    value=f"{user.mention}\n{content}",
                     inline=False
                 )
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(all_msgs)} total messages")
@@ -1535,7 +1535,7 @@ async def snipe_all_normal_command(ctx, page: int = 1):
         user = msg['author']
         embed.add_field(
             name=f"{i}. {user.mention}",
-            value=content,
+            value=f"{user.mention}\n{content}",
             inline=False
         )
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(all_msgs)} total messages")
@@ -1563,7 +1563,7 @@ async def snipe_all_normal_command(ctx, page: int = 1):
                 user = msg['author']
                 p_embed.add_field(
                     name=f"{i}. {user.mention}",
-                    value=content,
+                    value=f"{user.mention}\n{content}",
                     inline=False
                 )
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(all_msgs)} total messages")
@@ -1612,7 +1612,7 @@ async def snipe_all_links_command(ctx, page: int = 1):
         user = msg['author']
         embed.add_field(
             name=f"{i}. {user.mention}",
-            value=content,
+            value=f"{user.mention}\n{content}",
             inline=False
         )
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(all_msgs)} total messages")
@@ -1640,7 +1640,7 @@ async def snipe_all_links_command(ctx, page: int = 1):
                 user = msg['author']
                 p_embed.add_field(
                     name=f"{i}. {user.mention}",
-                    value=content,
+                    value=f"{user.mention}\n{content}",
                     inline=False
                 )
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(all_msgs)} total messages")
@@ -2067,7 +2067,7 @@ async def sp_slash(interaction: discord.Interaction, channel: discord.TextChanne
             
             p_embed.add_field(
                 name=f"{i}. {msg['author'].display_name}",
-                value=content,
+                value=f"{msg['author'].display_name}\n{content}",
                 inline=False
             )
         
@@ -2128,7 +2128,7 @@ async def spf_slash(interaction: discord.Interaction, channel: discord.TextChann
             
             p_embed.add_field(
                 name=f"{i}. {msg['author'].display_name}",
-                value=content,
+                value=f"{msg['author'].display_name}\n{content}",
                 inline=False
             )
         
@@ -2188,7 +2188,7 @@ async def spl_slash(interaction: discord.Interaction, channel: discord.TextChann
             
             p_embed.add_field(
                 name=f"{i}. {msg['author'].display_name}",
-                value=content,
+                value=f"{msg['author'].display_name}\n{content}",
                 inline=False
             )
         
@@ -2647,3 +2647,4 @@ async def prefix_slash(interaction: discord.Interaction, new_prefix: str):
 # Run the bot
 if __name__ == "__main__":
     bot.run(os.getenv('DISCORD_TOKEN'))
+
