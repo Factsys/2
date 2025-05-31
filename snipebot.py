@@ -907,7 +907,7 @@ class MemberHelpPaginationView(discord.ui.View):
             embed.add_field(name=name, value=value, inline=inline)
         embed.set_footer(text=f"Page {self.current_page + 1} of {self.total_pages} | Use < > to go through pages")
         return embed
-    @discord.ui.button(emoji="<", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page > 0:
             self.current_page -= 1
@@ -915,7 +915,7 @@ class MemberHelpPaginationView(discord.ui.View):
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
         else:
             await interaction.response.defer()
-    @discord.ui.button(emoji=">", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page < self.total_pages - 1:
             self.current_page += 1
@@ -963,7 +963,7 @@ class ModHelpPaginationView(discord.ui.View):
             embed.add_field(name=name, value=value, inline=inline)
         embed.set_footer(text=f"Page {self.current_page + 1} of {self.total_pages} | Use < > to go through pages")
         return embed
-    @discord.ui.button(emoji="<", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page > 0:
             self.current_page -= 1
@@ -971,7 +971,7 @@ class ModHelpPaginationView(discord.ui.View):
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
         else:
             await interaction.response.defer()
-    @discord.ui.button(emoji=">", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page < self.total_pages - 1:
             self.current_page += 1
@@ -1008,6 +1008,7 @@ async def help_slash(interaction: discord.Interaction):
 @bot.tree.command(name="helpm", description="Show mod help (mods/admins/owners only)")
 @check_not_blocked()
 async def helpm_slash(interaction: discord.Interaction):
+    logger.info(f"/helpm called by {interaction.user} ({interaction.user.id})")
     if not (interaction.user.guild_permissions.manage_messages or interaction.user.guild_permissions.administrator or is_bot_owner(interaction.user.id)):
         await interaction.response.send_message("❌ Only mods/admins/owners can use this command!", ephemeral=True)
         return
@@ -1021,13 +1022,13 @@ async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     print(f'Bot is in {len(bot.guilds)} guilds')
     run_flask()
-    
-    # Start the giveaway check task
     check_giveaways.start()
-    
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} command(s)")
+        # List all registered slash commands
+        for cmd in bot.tree.get_commands():
+            print(f"Registered slash command: /{cmd.name}")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
@@ -1724,7 +1725,6 @@ async def snipe_all_links_command(ctx, page: int = 1):
     else:
         await ctx.send(embed=embed)
 
-# FIXED: Namelock command with proper nickname handling
 @bot.command(name='namelock', aliases=['nl'])
 @not_blocked()
 async def namelock_command(ctx, member: discord.Member, *, nickname):
