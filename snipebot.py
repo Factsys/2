@@ -1531,8 +1531,8 @@ async def snipe_all_command(ctx, page: int = 1):
         content = msg['content'] or "*No text content*"
         if is_offensive_content(msg['content']):
             content = filter_content(msg['content'])
-        if len(content) > 100:
-            content = content[:97] + "..."
+                if len(content) > 100:
+                    content = content[:97] + "..."
         channel = bot.get_channel(channel_id)
         channel_name = channel.name if channel else f"ID:{channel_id}"
         user = msg['author']
@@ -2801,6 +2801,58 @@ def find_member_robust(guild, search_term):
     for m in guild.members:
         if m.display_name.lower() == search_term or m.name.lower() == search_term:
             return m
+    return None
+
+# Robust role lookup (server-local)
+def find_role_robust(guild, search_term):
+    """Find a role by mention, ID, or (unique) partial/full name (case-insensitive). Returns None if ambiguous or not found."""
+    if not guild or not search_term:
+        return None
+    # Mention
+    mention_match = re.match(r'<@&(\d+)>', str(search_term))
+    if mention_match:
+        role_id = int(mention_match.group(1))
+        return guild.get_role(role_id)
+    # ID
+    if str(search_term).isdigit():
+        role = guild.get_role(int(search_term))
+        if role:
+            return role
+    # Name (case-insensitive, partial)
+    search_term = str(search_term).lower()
+    matches = [r for r in guild.roles if search_term in r.name.lower()]
+    if len(matches) == 1:
+        return matches[0]
+    # Exact match preferred
+    for r in guild.roles:
+        if r.name.lower() == search_term:
+            return r
+    return None
+
+# Robust channel lookup (server-local)
+def find_channel_robust(guild, search_term):
+    """Find a text channel by mention, ID, or (unique) partial/full name (case-insensitive). Returns None if ambiguous or not found."""
+    if not guild or not search_term:
+        return None
+    # Mention
+    mention_match = re.match(r'<#(\d+)>', str(search_term))
+    if mention_match:
+        channel_id = int(mention_match.group(1))
+        return guild.get_channel(channel_id)
+    # ID
+    if str(search_term).isdigit():
+        channel = guild.get_channel(int(search_term))
+        if channel:
+            return channel
+    # Name (case-insensitive, partial)
+    search_term = str(search_term).lower()
+    matches = [c for c in guild.text_channels if search_term in c.name.lower()]
+    if len(matches) == 1:
+        return matches[0]
+    # Exact match preferred
+    for c in guild.text_channels:
+        if c.name.lower() == search_term:
+            return c
     return None
 
 # Run the bot
