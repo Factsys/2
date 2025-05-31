@@ -2778,6 +2778,31 @@ async def ms_slash(interaction: discord.Interaction, role: discord.Role):
         mess_permitted_roles[guild_id].add(role.id)
         await interaction.response.send_message(f"✅ Granted ,mess access to {role.mention}", ephemeral=True)
 
+def find_member_robust(guild, search_term):
+    """Find a member by mention, ID, or (unique) partial/full name (case-insensitive). Returns None if ambiguous or not found."""
+    if not guild or not search_term:
+        return None
+    # Mention
+    mention_match = re.match(r'<@!?(\d+)>', str(search_term))
+    if mention_match:
+        user_id = int(mention_match.group(1))
+        return guild.get_member(user_id)
+    # ID
+    if str(search_term).isdigit():
+        member = guild.get_member(int(search_term))
+        if member:
+            return member
+    # Name (case-insensitive, partial)
+    search_term = str(search_term).lower()
+    matches = [m for m in guild.members if search_term in m.display_name.lower() or search_term in m.name.lower()]
+    if len(matches) == 1:
+        return matches[0]
+    # Exact match preferred
+    for m in guild.members:
+        if m.display_name.lower() == search_term or m.name.lower() == search_term:
+            return m
+    return None
+
 # Run the bot
 if __name__ == "__main__":
     bot.run(os.getenv('DISCORD_TOKEN'))
