@@ -1133,6 +1133,22 @@ async def on_member_update(before, after):
                 except Exception as e:
                     print(f"Error reverting nickname for {after.name}: {e}")
 
+# FIXED: Add on_member_join event to re-apply namelock nickname
+@bot.event
+async def on_member_join(member):
+    # Re-apply namelock if user is in namelocked_users and for the correct guild
+    if member.id in namelocked_users:
+        namelock_data = namelocked_users[member.id]
+        if namelock_data['guild_id'] == member.guild.id:
+            locked_nickname = namelock_data['nickname']
+            try:
+                await member.edit(nick=locked_nickname, reason="Re-applying namelock on rejoin")
+                print(f"Re-applied namelock for {member.name} to {locked_nickname}")
+            except discord.Forbidden:
+                print(f"Cannot re-apply namelock for {member.name} - insufficient permissions")
+            except Exception as e:
+                print(f"Error re-applying namelock for {member.name}: {e}")
+
 # Task to check giveaways
 @tasks.loop(seconds=10)
 async def check_giveaways():
@@ -1466,7 +1482,7 @@ async def snipe_links_command(ctx, channel: str = None, page: int = 1):
             content = filter_content(msg['content'])
         embed.add_field(
             name=f"{i}. {msg['author'].mention}",
-            value=f"{msg['author'].mention}\n{content}",
+            value=f"{msg['author'].display_name}\n{content}",
             inline=False
         )
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(link_messages)} total messages")
@@ -1489,7 +1505,7 @@ async def snipe_links_command(ctx, channel: str = None, page: int = 1):
                     content = filter_content(msg['content'])
                 p_embed.add_field(
                     name=f"{i}. {msg['author'].mention}",
-                    value=f"{msg['author'].mention}\n{content}",
+                    value=f"{msg['author'].display_name}\n{content}",
                     inline=False
                 )
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(link_messages)} total messages")
@@ -2007,11 +2023,11 @@ async def namelock_immune_command(ctx, member: discord.Member):
         return
     
     if member.id in namelock_immune_users:
-        await ctx.send("❌ User is already namelock immune!")
-        return
-    
-    namelock_immune_users.add(member.id)
-    await ctx.send(f"✅ **{member.display_name}** is now immune to namelock")
+        namelock_immune_users.remove(member.id)
+        await ctx.send(f"✅ **{member.display_name}** is no longer immune to namelock")
+    else:
+        namelock_immune_users.add(member.id)
+        await ctx.send(f"✅ **{member.display_name}** is now immune to namelock")
 
 @bot.command(name='manage')
 @not_blocked()
@@ -2649,10 +2665,18 @@ async def giveaways_slash(interaction: discord.Interaction):
 @check_not_blocked()
 async def mess_slash(interaction: discord.Interaction, user: discord.User, message: str):
     """Send a DM to a user globally"""
-    if not is_bot_owner(interaction.user.id):
-        await interaction.response.send_message("❌ Only the bot owner can use this command!", ephemeral=True)
+    allowed = False
+    if is_bot_owner(interaction.user.id):
+        allowed = True
+    elif interaction.user.id in mess_permitted_users:
+        allowed = True
+    elif interaction.guild and interaction.guild.id in mess_permitted_roles:
+        user_role_ids = [role.id for role in interaction.user.roles]
+        if any(rid in mess_permitted_roles[interaction.guild.id] for rid in user_role_ids):
+            allowed = True
+    if not allowed:
+        await interaction.response.send_message("❌ Only the bot owner or permitted users/roles can use this command!", ephemeral=True)
         return
-    
     try:
         await user.send(message)
         await interaction.response.send_message(f"✅ Message sent to **{user.name}**", ephemeral=True)
