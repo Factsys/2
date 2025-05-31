@@ -1329,8 +1329,8 @@ async def snipe_filtered_command(ctx, channel: discord.TextChannel = None, page:
         user = page_messages[0]['author']
         embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
     for i, msg in enumerate(page_messages, start=start_idx + 1):
-        # Always show filtered (asterisked) content
-        content = filter_content(msg['original_content'] or "*No text content*")
+        # Show original unfiltered content for ,spf
+        content = msg['original_content'] or "*No text content*"
         user = msg['author']
         embed.add_field(
             name=f"{i}. {user.mention}",
@@ -1352,7 +1352,7 @@ async def snipe_filtered_command(ctx, channel: discord.TextChannel = None, page:
                 user = p_page_messages[0]['author']
                 p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
             for i, msg in enumerate(p_page_messages, start=p_start_idx + 1):
-                content = filter_content(msg['original_content'] or "*No text content*")
+                content = msg['original_content'] or "*No text content*"
                 user = msg['author']
                 p_embed.add_field(
                     name=f"{i}. {user.mention}",
@@ -1517,14 +1517,14 @@ async def snipe_all_command(ctx, page: int = 1):
 @bot.command(name='spfa')
 @not_blocked()
 async def snipe_all_normal_command(ctx, page: int = 1):
-    """Show all normal (unfiltered) deleted messages from all channels/threads, filtered if offensive"""
+    """Show all unfiltered deleted messages from all channels/threads"""
     all_msgs = []
     for channel_id, msgs in sniped_messages.items():
         for msg in msgs:
-            if msg.get('message_type') == 'normal':
+            if msg.get('message_type') != 'filtered':
                 all_msgs.append((msg, channel_id))
     if not all_msgs:
-        await ctx.send("❌ No normal deleted messages found in any channel/thread!")
+        await ctx.send("❌ No unfiltered deleted messages found in any channel/thread!")
         return
     all_msgs.sort(key=lambda x: x[0]['time'], reverse=True)
     total_pages = math.ceil(len(all_msgs) / MESSAGES_PER_PAGE)
@@ -1534,7 +1534,7 @@ async def snipe_all_normal_command(ctx, page: int = 1):
     end_idx = min(start_idx + MESSAGES_PER_PAGE, len(all_msgs))
     page_msgs = all_msgs[start_idx:end_idx]
     embed = discord.Embed(
-        title=f"📜 All Normal Deleted Messages (All Channels/Threads)",
+        title=f"📜 All Unfiltered Deleted Messages (All Channels/Threads)",
         color=discord.Color.green()
     )
     if page_msgs:
@@ -1562,7 +1562,7 @@ async def snipe_all_normal_command(ctx, page: int = 1):
             p_end_idx = min(p_start_idx + MESSAGES_PER_PAGE, len(all_msgs))
             p_page_msgs = all_msgs[p_start_idx:p_end_idx]
             p_embed = discord.Embed(
-                title=f"📜 All Normal Deleted Messages (All Channels/Threads)",
+                title=f"📜 All Unfiltered Deleted Messages (All Channels/Threads)",
                 color=discord.Color.green()
             )
             if p_page_msgs:
