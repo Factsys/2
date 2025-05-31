@@ -269,9 +269,10 @@ MESSAGES_PER_PAGE = 10
 # Add a set to store permitted users
 permitted_users = set()
 
-# Update is_user_blocked to allow permitted users
+# Save the original
 old_is_user_blocked = is_user_blocked
 
+# Redefine with permitted_users logic
 def is_user_blocked(user_id):
     if user_id in permitted_users:
         return False
