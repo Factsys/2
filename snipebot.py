@@ -266,6 +266,10 @@ reaction_roles = {}
 MAX_MESSAGES = 100
 MESSAGES_PER_PAGE = 10
 
+# Original is_user_blocked definition
+def is_user_blocked(user_id):
+    return user_id in blocked_users
+
 # Add a set to store permitted users
 permitted_users = set()
 
