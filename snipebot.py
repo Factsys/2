@@ -1222,77 +1222,64 @@ async def editsnipe_command(ctx):
 @bot.command(name='sp')
 @not_blocked()
 async def snipe_pages_command(ctx, channel: discord.TextChannel = None, page: int = 1):
-    """Show paginated list of normal deleted messages"""
     target_channel = channel or ctx.channel
     channel_id = target_channel.id
-    
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
         await ctx.send("❌ No deleted messages found in that channel!")
         return
-    
-    # Filter for normal messages only
     normal_messages = [msg for msg in sniped_messages[channel_id] if msg['message_type'] == 'normal']
-    
     if not normal_messages:
         await ctx.send("❌ No normal deleted messages found!")
         return
-    
-    # Create paginated embeds
     total_pages = math.ceil(len(normal_messages) / MESSAGES_PER_PAGE)
-    
     if page < 1 or page > total_pages:
         page = 1
-    
     start_idx = (page - 1) * MESSAGES_PER_PAGE
     end_idx = min(start_idx + MESSAGES_PER_PAGE, len(normal_messages))
     page_messages = normal_messages[start_idx:end_idx]
-    
     embed = discord.Embed(
         title=f"📜 Normal Deleted Messages - {target_channel.name}",
         color=discord.Color.blue()
     )
-    
+    if page_messages:
+        user = page_messages[0]['author']
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
     for i, msg in enumerate(page_messages, start=start_idx + 1):
         content = msg['content'] or "*No text content*"
-        if len(content) > 100:
-            content = content[:97] + "..."
-        
+        if is_offensive_content(msg['content']):
+            content = filter_content(msg['content'])
+        user = msg['author']
         embed.add_field(
-            name=f"{i}. {msg['author'].display_name}",
+            name=f"{i}. {user.mention}",
             value=content,
             inline=False
         )
-    
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(normal_messages)} total messages")
-    
-    # Add pagination if needed
     if total_pages > 1:
-        # Create all embeds for pagination
         embeds = []
         for p in range(1, total_pages + 1):
             p_start_idx = (p - 1) * MESSAGES_PER_PAGE
             p_end_idx = min(p_start_idx + MESSAGES_PER_PAGE, len(normal_messages))
             p_page_messages = normal_messages[p_start_idx:p_end_idx]
-            
             p_embed = discord.Embed(
                 title=f"📜 Normal Deleted Messages - {target_channel.name}",
                 color=discord.Color.blue()
             )
-            
+            if p_page_messages:
+                user = p_page_messages[0]['author']
+                p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
             for i, msg in enumerate(p_page_messages, start=p_start_idx + 1):
                 content = msg['content'] or "*No text content*"
-                if len(content) > 100:
-                    content = content[:97] + "..."
-                
+                if is_offensive_content(msg['content']):
+                    content = filter_content(msg['content'])
+                user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {msg['author'].display_name}",
+                    name=f"{i}. {user.mention}",
                     value=content,
                     inline=False
                 )
-            
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(normal_messages)} total messages")
             embeds.append(p_embed)
-        
         view = PaginationView(embeds)
         view.current_page = page - 1
         view.update_buttons()
@@ -1303,78 +1290,61 @@ async def snipe_pages_command(ctx, channel: discord.TextChannel = None, page: in
 @bot.command(name='spf')
 @not_blocked()
 async def snipe_filtered_command(ctx, channel: discord.TextChannel = None, page: int = 1):
-    """Show paginated list of filtered/offensive deleted messages"""
     target_channel = channel or ctx.channel
     channel_id = target_channel.id
-    
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
         await ctx.send("❌ No deleted messages found in that channel!")
         return
-    
-    # Filter for offensive messages only
     filtered_messages = [msg for msg in sniped_messages[channel_id] if msg['message_type'] == 'filtered']
-    
     if not filtered_messages:
         await ctx.send("❌ No filtered deleted messages found!")
         return
-    
-    # Create paginated embeds
     total_pages = math.ceil(len(filtered_messages) / MESSAGES_PER_PAGE)
-    
     if page < 1 or page > total_pages:
         page = 1
-    
     start_idx = (page - 1) * MESSAGES_PER_PAGE
     end_idx = min(start_idx + MESSAGES_PER_PAGE, len(filtered_messages))
     page_messages = filtered_messages[start_idx:end_idx]
-    
     embed = discord.Embed(
         title=f"🔒 Filtered Deleted Messages - {target_channel.name}",
         color=discord.Color.red()
     )
-    
+    if page_messages:
+        user = page_messages[0]['author']
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
     for i, msg in enumerate(page_messages, start=start_idx + 1):
-        # Show original unfiltered content for ,spf
-        content = msg['original_content'] or "*No text content*"
-        if len(content) > 100:
-            content = content[:97] + "..."
-        
+        # Always show filtered (asterisked) content
+        content = filter_content(msg['original_content'] or "*No text content*")
+        user = msg['author']
         embed.add_field(
-            name=f"{i}. {msg['author'].display_name}",
+            name=f"{i}. {user.mention}",
             value=content,
             inline=False
         )
-    
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(filtered_messages)} total messages")
-    
-    # Add pagination if needed
     if total_pages > 1:
-        # Create all embeds for pagination
         embeds = []
         for p in range(1, total_pages + 1):
             p_start_idx = (p - 1) * MESSAGES_PER_PAGE
             p_end_idx = min(p_start_idx + MESSAGES_PER_PAGE, len(filtered_messages))
             p_page_messages = filtered_messages[p_start_idx:p_end_idx]
-            
             p_embed = discord.Embed(
                 title=f"🔒 Filtered Deleted Messages - {target_channel.name}",
                 color=discord.Color.red()
             )
-            
+            if p_page_messages:
+                user = p_page_messages[0]['author']
+                p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
             for i, msg in enumerate(p_page_messages, start=p_start_idx + 1):
-                content = msg['original_content'] or "*No text content*"
-                if len(content) > 100:
-                    content = content[:97] + "..."
-                
+                content = filter_content(msg['original_content'] or "*No text content*")
+                user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {msg['author'].display_name}",
+                    name=f"{i}. {user.mention}",
                     value=content,
                     inline=False
                 )
-            
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(filtered_messages)} total messages")
             embeds.append(p_embed)
-        
         view = PaginationView(embeds)
         view.current_page = page - 1
         view.update_buttons()
@@ -1385,77 +1355,280 @@ async def snipe_filtered_command(ctx, channel: discord.TextChannel = None, page:
 @bot.command(name='spl')
 @not_blocked()
 async def snipe_links_command(ctx, channel: discord.TextChannel = None, page: int = 1):
-    """Show paginated list of deleted link messages"""
     target_channel = channel or ctx.channel
     channel_id = target_channel.id
-    
     if channel_id not in sniped_messages or not sniped_messages[channel_id]:
         await ctx.send("❌ No deleted messages found in that channel!")
         return
-    
-    # Filter for link messages only
     link_messages = [msg for msg in sniped_messages[channel_id] if msg['message_type'] == 'link']
-    
     if not link_messages:
         await ctx.send("❌ No deleted link messages found!")
         return
-    
-    # Create paginated embeds
     total_pages = math.ceil(len(link_messages) / MESSAGES_PER_PAGE)
-    
     if page < 1 or page > total_pages:
         page = 1
-    
     start_idx = (page - 1) * MESSAGES_PER_PAGE
     end_idx = min(start_idx + MESSAGES_PER_PAGE, len(link_messages))
     page_messages = link_messages[start_idx:end_idx]
-    
     embed = discord.Embed(
         title=f"🔗 Deleted Link Messages - {target_channel.name}",
         color=discord.Color.purple()
     )
-    
+    if page_messages:
+        user = page_messages[0]['author']
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
     for i, msg in enumerate(page_messages, start=start_idx + 1):
         content = msg['content'] or "*No text content*"
-        if len(content) > 100:
-            content = content[:97] + "..."
-        
+        if is_offensive_content(msg['content']):
+            content = filter_content(msg['content'])
+        user = msg['author']
         embed.add_field(
-            name=f"{i}. {msg['author'].display_name}",
+            name=f"{i}. {user.mention}",
             value=content,
             inline=False
         )
-    
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(link_messages)} total messages")
-    
-    # Add pagination if needed
     if total_pages > 1:
-        # Create all embeds for pagination
         embeds = []
         for p in range(1, total_pages + 1):
             p_start_idx = (p - 1) * MESSAGES_PER_PAGE
             p_end_idx = min(p_start_idx + MESSAGES_PER_PAGE, len(link_messages))
             p_page_messages = link_messages[p_start_idx:p_end_idx]
-            
             p_embed = discord.Embed(
                 title=f"🔗 Deleted Link Messages - {target_channel.name}",
                 color=discord.Color.purple()
             )
-            
+            if p_page_messages:
+                user = p_page_messages[0]['author']
+                p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
             for i, msg in enumerate(p_page_messages, start=p_start_idx + 1):
                 content = msg['content'] or "*No text content*"
-                if len(content) > 100:
-                    content = content[:97] + "..."
-                
+                if is_offensive_content(msg['content']):
+                    content = filter_content(msg['content'])
+                user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {msg['author'].display_name}",
+                    name=f"{i}. {user.mention}",
                     value=content,
                     inline=False
                 )
-            
             p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(link_messages)} total messages")
             embeds.append(p_embed)
-        
+        view = PaginationView(embeds)
+        view.current_page = page - 1
+        view.update_buttons()
+        await ctx.send(embed=embeds[page - 1], view=view)
+    else:
+        await ctx.send(embed=embed)
+
+@bot.command(name='spa')
+@not_blocked()
+async def snipe_all_command(ctx, page: int = 1):
+    all_msgs = []
+    for channel_id, msgs in sniped_messages.items():
+        for msg in msgs:
+            if msg.get('message_type') == 'normal':
+                all_msgs.append((msg, channel_id))
+    if not all_msgs:
+        await ctx.send("❌ No normal deleted messages found in any channel/thread!")
+        return
+    all_msgs.sort(key=lambda x: x[0]['time'], reverse=True)
+    total_pages = math.ceil(len(all_msgs) / MESSAGES_PER_PAGE)
+    if page < 1 or page > total_pages:
+        page = 1
+    start_idx = (page - 1) * MESSAGES_PER_PAGE
+    end_idx = min(start_idx + MESSAGES_PER_PAGE, len(all_msgs))
+    page_msgs = all_msgs[start_idx:end_idx]
+    embed = discord.Embed(
+        title=f"📜 All Deleted Messages (All Channels/Threads)",
+        color=discord.Color.blurple()
+    )
+    if page_msgs:
+        user = page_msgs[0][0]['author']
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
+    for i, (msg, channel_id) in enumerate(page_msgs, start=start_idx + 1):
+        content = msg['content'] or "*No text content*"
+        if is_offensive_content(msg['content']):
+            content = filter_content(msg['content'])
+        channel = bot.get_channel(channel_id)
+        channel_name = channel.name if channel else f"ID:{channel_id}"
+        user = msg['author']
+        embed.add_field(
+            name=f"{i}. {user.mention} in #{channel_name}",
+            value=content,
+            inline=False
+        )
+    embed.set_footer(text=f"Page {page} of {total_pages} | {len(all_msgs)} total messages")
+    if total_pages > 1:
+        embeds = []
+        for p in range(1, total_pages + 1):
+            p_start_idx = (p - 1) * MESSAGES_PER_PAGE
+            p_end_idx = min(p_start_idx + MESSAGES_PER_PAGE, len(all_msgs))
+            p_page_msgs = all_msgs[p_start_idx:p_end_idx]
+            p_embed = discord.Embed(
+                title=f"📜 All Deleted Messages (All Channels/Threads)",
+                color=discord.Color.blurple()
+            )
+            if p_page_msgs:
+                user = p_page_msgs[0][0]['author']
+                p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
+            for i, (msg, channel_id) in enumerate(p_page_msgs, start=p_start_idx + 1):
+                content = msg['content'] or "*No text content*"
+                if is_offensive_content(msg['content']):
+                    content = filter_content(msg['content'])
+                channel = bot.get_channel(channel_id)
+                channel_name = channel.name if channel else f"ID:{channel_id}"
+                user = msg['author']
+                p_embed.add_field(
+                    name=f"{i}. {user.mention} in #{channel_name}",
+                    value=content,
+                    inline=False
+                )
+            p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(all_msgs)} total messages")
+            embeds.append(p_embed)
+        view = PaginationView(embeds)
+        view.current_page = page - 1
+        view.update_buttons()
+        await ctx.send(embed=embeds[page - 1], view=view)
+    else:
+        await ctx.send(embed=embed)
+
+@bot.command(name='spfa')
+@not_blocked()
+async def snipe_all_normal_command(ctx, page: int = 1):
+    all_msgs = []
+    for channel_id, msgs in sniped_messages.items():
+        for msg in msgs:
+            if msg.get('message_type') == 'normal':
+                all_msgs.append((msg, channel_id))
+    if not all_msgs:
+        await ctx.send("❌ No normal deleted messages found in any channel/thread!")
+        return
+    all_msgs.sort(key=lambda x: x[0]['time'], reverse=True)
+    total_pages = math.ceil(len(all_msgs) / MESSAGES_PER_PAGE)
+    if page < 1 or page > total_pages:
+        page = 1
+    start_idx = (page - 1) * MESSAGES_PER_PAGE
+    end_idx = min(start_idx + MESSAGES_PER_PAGE, len(all_msgs))
+    page_msgs = all_msgs[start_idx:end_idx]
+    embed = discord.Embed(
+        title=f"📜 All Normal Deleted Messages (All Channels/Threads)",
+        color=discord.Color.green()
+    )
+    if page_msgs:
+        user = page_msgs[0][0]['author']
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
+    for i, (msg, channel_id) in enumerate(page_msgs, start=start_idx + 1):
+        content = msg['content'] or "*No text content*"
+        if is_offensive_content(msg['content']):
+            content = filter_content(msg['content'])
+        channel = bot.get_channel(channel_id)
+        channel_name = channel.name if channel else f"ID:{channel_id}"
+        user = msg['author']
+        embed.add_field(
+            name=f"{i}. {user.mention} in #{channel_name}",
+            value=content,
+            inline=False
+        )
+    embed.set_footer(text=f"Page {page} of {total_pages} | {len(all_msgs)} total messages")
+    if total_pages > 1:
+        embeds = []
+        for p in range(1, total_pages + 1):
+            p_start_idx = (p - 1) * MESSAGES_PER_PAGE
+            p_end_idx = min(p_start_idx + MESSAGES_PER_PAGE, len(all_msgs))
+            p_page_msgs = all_msgs[p_start_idx:p_end_idx]
+            p_embed = discord.Embed(
+                title=f"📜 All Normal Deleted Messages (All Channels/Threads)",
+                color=discord.Color.green()
+            )
+            if p_page_msgs:
+                user = p_page_msgs[0][0]['author']
+                p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
+            for i, (msg, channel_id) in enumerate(p_page_msgs, start=p_start_idx + 1):
+                content = msg['content'] or "*No text content*"
+                if is_offensive_content(msg['content']):
+                    content = filter_content(msg['content'])
+                channel = bot.get_channel(channel_id)
+                channel_name = channel.name if channel else f"ID:{channel_id}"
+                user = msg['author']
+                p_embed.add_field(
+                    name=f"{i}. {user.mention} in #{channel_name}",
+                    value=content,
+                    inline=False
+                )
+            p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(all_msgs)} total messages")
+            embeds.append(p_embed)
+        view = PaginationView(embeds)
+        view.current_page = page - 1
+        view.update_buttons()
+        await ctx.send(embed=embeds[page - 1], view=view)
+    else:
+        await ctx.send(embed=embed)
+
+@bot.command(name='spla')
+@not_blocked()
+async def snipe_all_links_command(ctx, page: int = 1):
+    all_msgs = []
+    for channel_id, msgs in sniped_messages.items():
+        for msg in msgs:
+            if msg.get('message_type') == 'link':
+                all_msgs.append((msg, channel_id))
+    if not all_msgs:
+        await ctx.send("❌ No deleted link messages found in any channel/thread!")
+        return
+    all_msgs.sort(key=lambda x: x[0]['time'], reverse=True)
+    total_pages = math.ceil(len(all_msgs) / MESSAGES_PER_PAGE)
+    if page < 1 or page > total_pages:
+        page = 1
+    start_idx = (page - 1) * MESSAGES_PER_PAGE
+    end_idx = min(start_idx + MESSAGES_PER_PAGE, len(all_msgs))
+    page_msgs = all_msgs[start_idx:end_idx]
+    embed = discord.Embed(
+        title=f"🔗 All Deleted Link Messages (All Channels/Threads)",
+        color=discord.Color.purple()
+    )
+    if page_msgs:
+        user = page_msgs[0][0]['author']
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
+    for i, (msg, channel_id) in enumerate(page_msgs, start=start_idx + 1):
+        content = msg['content'] or "*No text content*"
+        if is_offensive_content(msg['content']):
+            content = filter_content(msg['content'])
+        channel = bot.get_channel(channel_id)
+        channel_name = channel.name if channel else f"ID:{channel_id}"
+        user = msg['author']
+        embed.add_field(
+            name=f"{i}. {user.mention} in #{channel_name}",
+            value=content,
+            inline=False
+        )
+    embed.set_footer(text=f"Page {page} of {total_pages} | {len(all_msgs)} total messages")
+    if total_pages > 1:
+        embeds = []
+        for p in range(1, total_pages + 1):
+            p_start_idx = (p - 1) * MESSAGES_PER_PAGE
+            p_end_idx = min(p_start_idx + MESSAGES_PER_PAGE, len(all_msgs))
+            p_page_msgs = all_msgs[p_start_idx:p_end_idx]
+            p_embed = discord.Embed(
+                title=f"🔗 All Deleted Link Messages (All Channels/Threads)",
+                color=discord.Color.purple()
+            )
+            if p_page_msgs:
+                user = p_page_msgs[0][0]['author']
+                p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
+            for i, (msg, channel_id) in enumerate(p_page_msgs, start=p_start_idx + 1):
+                content = msg['content'] or "*No text content*"
+                if is_offensive_content(msg['content']):
+                    content = filter_content(msg['content'])
+                channel = bot.get_channel(channel_id)
+                channel_name = channel.name if channel else f"ID:{channel_id}"
+                user = msg['author']
+                p_embed.add_field(
+                    name=f"{i}. {user.mention} in #{channel_name}",
+                    value=content,
+                    inline=False
+                )
+            p_embed.set_footer(text=f"Page {p} of {total_pages} | {len(all_msgs)} total messages")
+            embeds.append(p_embed)
         view = PaginationView(embeds)
         view.current_page = page - 1
         view.update_buttons()
