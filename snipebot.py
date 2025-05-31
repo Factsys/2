@@ -1531,8 +1531,8 @@ async def snipe_all_command(ctx, page: int = 1):
         content = msg['content'] or "*No text content*"
         if is_offensive_content(msg['content']):
             content = filter_content(msg['content'])
-                if len(content) > 100:
-                    content = content[:97] + "..."
+        if len(content) > 100:
+            content = content[:97] + "..."
         channel = bot.get_channel(channel_id)
         channel_name = channel.name if channel else f"ID:{channel_id}"
         user = msg['author']
@@ -2142,9 +2142,8 @@ async def sp_slash(interaction: discord.Interaction, channel: discord.TextChanne
         
         for i, msg in enumerate(p_page_messages, start=p_start_idx + 1):
             content = msg['content'] or "*No text content*"
-            if len(content) > 100:
-                content = content[:97] + "..."
-            
+            if is_offensive_content(msg['content']):
+                content = filter_content(msg['content'])
             p_embed.add_field(
                 name=f"{i}. {msg['author'].display_name}",
                 value=f"{msg['author'].display_name}\n{content}",
@@ -2263,6 +2262,8 @@ async def spl_slash(interaction: discord.Interaction, channel: discord.TextChann
         
         for i, msg in enumerate(p_page_messages, start=p_start_idx + 1):
             content = msg['content'] or "*No text content*"
+            if is_offensive_content(msg['content']):
+                content = filter_content(msg['content'])
             if len(content) > 100:
                 content = content[:97] + "..."
             
@@ -2688,10 +2689,10 @@ async def namelock_immune_slash(interaction: discord.Interaction, member: discor
     
     if member.id in namelock_immune_users:
         namelock_immune_users.remove(member.id)
-        await interaction.response.send_message(f"✅ **{member.display_name}** is no longer immune to namelock")
+        await interaction.response.send_message(f"✅ **{member.display_name}** is no longer immune to namelock", ephemeral=True)
     else:
         namelock_immune_users.add(member.id)
-        await interaction.response.send_message(f"✅ **{member.display_name}** is now immune to namelock")
+        await interaction.response.send_message(f"✅ **{member.display_name}** is now immune to namelock", ephemeral=True)
 
 @bot.tree.command(name="manage", description="Show bot management panel")
 @check_not_blocked()
