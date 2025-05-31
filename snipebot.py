@@ -1906,15 +1906,18 @@ async def message_user_command(ctx, user_search: str, *, message):
 @not_blocked()
 async def add_role_command(ctx, member: discord.Member, *, role_name):
     """Add a role to a user"""
-    if not (ctx.author.guild_permissions.manage_roles or is_bot_owner(ctx.author.id)):
+    # Allow if user has manage_roles, is bot owner, or is in permitted_users
+    if not (ctx.author.guild_permissions.manage_roles or is_bot_owner(ctx.author.id) or ctx.author.id in permitted_users):
         await ctx.send("❌ You don't have permission to manage roles!")
         return
-    
     role = discord.utils.get(ctx.guild.roles, name=role_name)
     if not role:
         await ctx.send(f"❌ Role `{role_name}` not found!")
         return
-    
+    # Only allow if the command user is above the target role
+    if ctx.author.top_role <= role and not is_bot_owner(ctx.author.id):
+        await ctx.send("❌ You can only give roles lower than your highest role!")
+        return
     try:
         await member.add_roles(role, reason=f"Added by {ctx.author}")
         await ctx.send(f"✅ Added role **{role.name}** to **{member.display_name}**")
@@ -1942,19 +1945,16 @@ async def namelock_immune_command(ctx, member: discord.Member):
 @not_blocked()
 async def manage_command(ctx):
     """Show bot management panel"""
-    if not is_bot_owner(ctx.author.id):
+    if not (is_bot_owner(ctx.author.id) or ctx.author.id in permitted_users):
         await ctx.send("❌ Only the bot owner can use this command!")
         return
-    
     uptime_seconds = time.time() - BOT_START_TIME
     uptime_str = format_uptime(uptime_seconds)
-    
     embed = discord.Embed(title="🔧 Bot Management Panel", color=discord.Color.blue())
     embed.add_field(name="📊 Statistics", value=f"**Guilds:** {len(bot.guilds)}\n**Users:** {len(bot.users)}\n**Uptime:** {uptime_str}", inline=False)
     embed.add_field(name="🚫 Blocked Users", value=f"{len(blocked_users)} users", inline=True)
     embed.add_field(name="🔒 Namelocked Users", value=f"{len(namelocked_users)} users", inline=True)
     embed.add_field(name="🎉 Active Giveaways", value=f"{len(active_giveaways)} giveaways", inline=True)
-    
     await ctx.send(embed=embed)
 
 # Slash commands
