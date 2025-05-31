@@ -266,9 +266,16 @@ reaction_roles = {}
 MAX_MESSAGES = 100
 MESSAGES_PER_PAGE = 10
 
-# Helper functions
+# Add a set to store permitted users
+permitted_users = set()
+
+# Update is_user_blocked to allow permitted users
+old_is_user_blocked = is_user_blocked
+
 def is_user_blocked(user_id):
-    return user_id in blocked_users
+    if user_id in permitted_users:
+        return False
+    return old_is_user_blocked(user_id)
 
 def is_bot_owner(user_id):
     return user_id == BOT_OWNER_ID
@@ -531,6 +538,8 @@ def check_giveaway_requirements(member, requirements):
 # Custom checks
 def not_blocked():
     async def predicate(ctx):
+        if ctx.author.id in permitted_users:
+            return True
         if is_user_blocked(ctx.author.id):
             return False
         return True
@@ -538,6 +547,8 @@ def not_blocked():
 
 def check_not_blocked():
     async def predicate(interaction: discord.Interaction):
+        if interaction.user.id in permitted_users:
+            return True
         if is_user_blocked(interaction.user.id):
             return False
         return True
@@ -1457,7 +1468,7 @@ async def snipe_all_command(ctx, page: int = 1):
         channel_name = channel.name if channel else f"ID:{channel_id}"
         user = msg['author']
         embed.add_field(
-            name=f"{i}. {user.mention}",
+            name=f"{i}. {user.display_name} ({user.id}) in #{channel_name}",
             value=f"{user.mention}\n{content}",
             inline=False
         )
@@ -1485,7 +1496,7 @@ async def snipe_all_command(ctx, page: int = 1):
                 channel_name = channel.name if channel else f"ID:{channel_id}"
                 user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {user.mention}",
+                    name=f"{i}. {user.display_name} ({user.id}) in #{channel_name}",
                     value=f"{user.mention}\n{content}",
                     inline=False
                 )
@@ -1534,7 +1545,7 @@ async def snipe_all_normal_command(ctx, page: int = 1):
         channel_name = channel.name if channel else f"ID:{channel_id}"
         user = msg['author']
         embed.add_field(
-            name=f"{i}. {user.mention}",
+            name=f"{i}. {user.display_name} ({user.id}) in #{channel_name}",
             value=f"{user.mention}\n{content}",
             inline=False
         )
@@ -1562,7 +1573,7 @@ async def snipe_all_normal_command(ctx, page: int = 1):
                 channel_name = channel.name if channel else f"ID:{channel_id}"
                 user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {user.mention}",
+                    name=f"{i}. {user.display_name} ({user.id}) in #{channel_name}",
                     value=f"{user.mention}\n{content}",
                     inline=False
                 )
@@ -1611,7 +1622,7 @@ async def snipe_all_links_command(ctx, page: int = 1):
         channel_name = channel.name if channel else f"ID:{channel_id}"
         user = msg['author']
         embed.add_field(
-            name=f"{i}. {user.mention}",
+            name=f"{i}. {user.display_name} ({user.id}) in #{channel_name}",
             value=f"{user.mention}\n{content}",
             inline=False
         )
@@ -1639,7 +1650,7 @@ async def snipe_all_links_command(ctx, page: int = 1):
                 channel_name = channel.name if channel else f"ID:{channel_id}"
                 user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {user.mention}",
+                    name=f"{i}. {user.display_name} ({user.id}) in #{channel_name}",
                     value=f"{user.mention}\n{content}",
                     inline=False
                 )
@@ -2644,7 +2655,19 @@ async def prefix_slash(interaction: discord.Interaction, new_prefix: str):
     custom_prefixes[interaction.guild.id] = new_prefix
     await interaction.response.send_message(f"✅ Server prefix changed to `{new_prefix}`")
 
+# Add the /perm command (slash only, owner only)
+@bot.tree.command(name="perm", description="Toggle full command access for a user (owner only)")
+async def perm_slash(interaction: discord.Interaction, user: discord.User):
+    if interaction.user.id != BOT_OWNER_ID:
+        await interaction.response.send_message("❌ Only the bot owner can use this command!", ephemeral=True)
+        return
+    if user.id in permitted_users:
+        permitted_users.remove(user.id)
+        await interaction.response.send_message(f"✅ Removed full command access from {user.mention}", ephemeral=True)
+    else:
+        permitted_users.add(user.id)
+        await interaction.response.send_message(f"✅ Granted full command access to {user.mention}", ephemeral=True)
+
 # Run the bot
 if __name__ == "__main__":
     bot.run(os.getenv('DISCORD_TOKEN'))
-
