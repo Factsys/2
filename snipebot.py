@@ -1457,7 +1457,7 @@ async def snipe_all_command(ctx, page: int = 1):
         channel_name = channel.name if channel else f"ID:{channel_id}"
         user = msg['author']
         embed.add_field(
-            name=f"{i}. {user.mention} in #{channel_name}",
+            name=f"{i}. {user.mention}",
             value=content,
             inline=False
         )
@@ -1485,7 +1485,7 @@ async def snipe_all_command(ctx, page: int = 1):
                 channel_name = channel.name if channel else f"ID:{channel_id}"
                 user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {user.mention} in #{channel_name}",
+                    name=f"{i}. {user.mention}",
                     value=content,
                     inline=False
                 )
@@ -1534,7 +1534,7 @@ async def snipe_all_normal_command(ctx, page: int = 1):
         channel_name = channel.name if channel else f"ID:{channel_id}"
         user = msg['author']
         embed.add_field(
-            name=f"{i}. {user.mention} in #{channel_name}",
+            name=f"{i}. {user.mention}",
             value=content,
             inline=False
         )
@@ -1562,7 +1562,7 @@ async def snipe_all_normal_command(ctx, page: int = 1):
                 channel_name = channel.name if channel else f"ID:{channel_id}"
                 user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {user.mention} in #{channel_name}",
+                    name=f"{i}. {user.mention}",
                     value=content,
                     inline=False
                 )
@@ -1611,7 +1611,7 @@ async def snipe_all_links_command(ctx, page: int = 1):
         channel_name = channel.name if channel else f"ID:{channel_id}"
         user = msg['author']
         embed.add_field(
-            name=f"{i}. {user.mention} in #{channel_name}",
+            name=f"{i}. {user.mention}",
             value=content,
             inline=False
         )
@@ -1639,7 +1639,7 @@ async def snipe_all_links_command(ctx, page: int = 1):
                 channel_name = channel.name if channel else f"ID:{channel_id}"
                 user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {user.mention} in #{channel_name}",
+                    name=f"{i}. {user.mention}",
                     value=content,
                     inline=False
                 )
