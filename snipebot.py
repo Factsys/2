@@ -1516,15 +1516,15 @@ async def snipe_all_command(ctx, page: int = 1):
 
 @bot.command(name='spfa')
 @not_blocked()
-async def snipe_all_normal_command(ctx, page: int = 1):
-    """Show all unfiltered deleted messages from all channels/threads"""
+async def snipe_all_filtered_command(ctx, page: int = 1):
+    """Show all filtered deleted messages from all channels/threads"""
     all_msgs = []
     for channel_id, msgs in sniped_messages.items():
         for msg in msgs:
-            if msg.get('message_type') != 'filtered':
+            if msg.get('message_type') == 'filtered':
                 all_msgs.append((msg, channel_id))
     if not all_msgs:
-        await ctx.send("❌ No unfiltered deleted messages found in any channel/thread!")
+        await ctx.send("❌ No filtered deleted messages found in any channel/thread!")
         return
     all_msgs.sort(key=lambda x: x[0]['time'], reverse=True)
     total_pages = math.ceil(len(all_msgs) / MESSAGES_PER_PAGE)
@@ -1534,18 +1534,14 @@ async def snipe_all_normal_command(ctx, page: int = 1):
     end_idx = min(start_idx + MESSAGES_PER_PAGE, len(all_msgs))
     page_msgs = all_msgs[start_idx:end_idx]
     embed = discord.Embed(
-        title=f"📜 All Unfiltered Deleted Messages (All Channels/Threads)",
-        color=discord.Color.green()
+        title=f"🔒 Filtered Deleted Messages (All Channels/Threads)",
+        color=discord.Color.red()
     )
     if page_msgs:
         user = page_msgs[0][0]['author']
         embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
     for i, (msg, channel_id) in enumerate(page_msgs, start=start_idx + 1):
-        content = msg['content'] or "*No text content*"
-        if is_offensive_content(msg['content']):
-            content = filter_content(msg['content'])
-        if len(content) > 100:
-            content = content[:97] + "..."
+        content = msg['original_content'] or "*No text content*"
         channel = bot.get_channel(channel_id)
         channel_name = channel.name if channel else f"ID:{channel_id}"
         user = msg['author']
@@ -1562,18 +1558,14 @@ async def snipe_all_normal_command(ctx, page: int = 1):
             p_end_idx = min(p_start_idx + MESSAGES_PER_PAGE, len(all_msgs))
             p_page_msgs = all_msgs[p_start_idx:p_end_idx]
             p_embed = discord.Embed(
-                title=f"📜 All Unfiltered Deleted Messages (All Channels/Threads)",
-                color=discord.Color.green()
+                title=f"🔒 Filtered Deleted Messages (All Channels/Threads)",
+                color=discord.Color.red()
             )
             if p_page_msgs:
                 user = p_page_msgs[0][0]['author']
                 p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
             for i, (msg, channel_id) in enumerate(p_page_msgs, start=p_start_idx + 1):
-                content = msg['content'] or "*No text content*"
-                if is_offensive_content(msg['content']):
-                    content = filter_content(msg['content'])
-                if len(content) > 100:
-                    content = content[:97] + "..."
+                content = msg['original_content'] or "*No text content*"
                 channel = bot.get_channel(channel_id)
                 channel_name = channel.name if channel else f"ID:{channel_id}"
                 user = msg['author']
