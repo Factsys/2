@@ -2459,18 +2459,16 @@ async def prefix_slash(interaction: discord.Interaction, new_prefix: str):
 @bot.command(name='spa')
 @not_blocked()
 async def snipe_all_command(ctx, page: int = 1):
-    """Show all deleted messages from all channels/threads (disco style)"""
-    # Gather all messages from all channels/threads
+    """Show all normal (unfiltered) deleted messages from all channels/threads (disco style)"""
     all_msgs = []
     for channel_id, msgs in sniped_messages.items():
         for msg in msgs:
-            all_msgs.append((msg, channel_id))
+            if msg.get('message_type') == 'normal':
+                all_msgs.append((msg, channel_id))
     if not all_msgs:
-        await ctx.send("❌ No deleted messages found in any channel/thread!")
+        await ctx.send("❌ No normal deleted messages found in any channel/thread!")
         return
-    # Sort by time (most recent first)
     all_msgs.sort(key=lambda x: x[0]['time'], reverse=True)
-    # Pagination
     total_pages = math.ceil(len(all_msgs) / MESSAGES_PER_PAGE)
     if page < 1 or page > total_pages:
         page = 1
@@ -2481,20 +2479,25 @@ async def snipe_all_command(ctx, page: int = 1):
         title=f"📜 All Deleted Messages (All Channels/Threads)",
         color=discord.Color.blurple()
     )
+    # Set author to first message's author if available
+    if page_msgs:
+        user = page_msgs[0][0]['author']
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
     for i, (msg, channel_id) in enumerate(page_msgs, start=start_idx + 1):
         content = msg['content'] or "*No text content*"
+        if is_offensive_content(msg['content']):
+            content = filter_content(msg['content'])
         if len(content) > 100:
             content = content[:97] + "..."
-        # Get channel/thread name
         channel = bot.get_channel(channel_id)
         channel_name = channel.name if channel else f"ID:{channel_id}"
+        user = msg['author']
         embed.add_field(
-            name=f"{i}. {msg['author'].display_name} in #{channel_name}",
+            name=f"{i}. {user.mention} in #{channel_name}",
             value=content,
             inline=False
         )
     embed.set_footer(text=f"Page {page} of {total_pages} | {len(all_msgs)} total messages")
-    # Pagination view
     if total_pages > 1:
         embeds = []
         for p in range(1, total_pages + 1):
@@ -2505,14 +2508,20 @@ async def snipe_all_command(ctx, page: int = 1):
                 title=f"📜 All Deleted Messages (All Channels/Threads)",
                 color=discord.Color.blurple()
             )
+            if p_page_msgs:
+                user = p_page_msgs[0][0]['author']
+                p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
             for i, (msg, channel_id) in enumerate(p_page_msgs, start=p_start_idx + 1):
                 content = msg['content'] or "*No text content*"
+                if is_offensive_content(msg['content']):
+                    content = filter_content(msg['content'])
                 if len(content) > 100:
                     content = content[:97] + "..."
                 channel = bot.get_channel(channel_id)
                 channel_name = channel.name if channel else f"ID:{channel_id}"
+                user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {msg['author'].display_name} in #{channel_name}",
+                    name=f"{i}. {user.mention} in #{channel_name}",
                     value=content,
                     inline=False
                 )
@@ -2528,7 +2537,7 @@ async def snipe_all_command(ctx, page: int = 1):
 @bot.command(name='spfa')
 @not_blocked()
 async def snipe_all_normal_command(ctx, page: int = 1):
-    """Show all normal (unfiltered) deleted messages from all channels/threads"""
+    """Show all normal (unfiltered) deleted messages from all channels/threads, filtered if offensive"""
     all_msgs = []
     for channel_id, msgs in sniped_messages.items():
         for msg in msgs:
@@ -2548,14 +2557,20 @@ async def snipe_all_normal_command(ctx, page: int = 1):
         title=f"📜 All Normal Deleted Messages (All Channels/Threads)",
         color=discord.Color.green()
     )
+    if page_msgs:
+        user = page_msgs[0][0]['author']
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
     for i, (msg, channel_id) in enumerate(page_msgs, start=start_idx + 1):
         content = msg['content'] or "*No text content*"
+        if is_offensive_content(msg['content']):
+            content = filter_content(msg['content'])
         if len(content) > 100:
             content = content[:97] + "..."
         channel = bot.get_channel(channel_id)
         channel_name = channel.name if channel else f"ID:{channel_id}"
+        user = msg['author']
         embed.add_field(
-            name=f"{i}. {msg['author'].display_name} in #{channel_name}",
+            name=f"{i}. {user.mention} in #{channel_name}",
             value=content,
             inline=False
         )
@@ -2570,14 +2585,20 @@ async def snipe_all_normal_command(ctx, page: int = 1):
                 title=f"📜 All Normal Deleted Messages (All Channels/Threads)",
                 color=discord.Color.green()
             )
+            if p_page_msgs:
+                user = p_page_msgs[0][0]['author']
+                p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
             for i, (msg, channel_id) in enumerate(p_page_msgs, start=p_start_idx + 1):
                 content = msg['content'] or "*No text content*"
+                if is_offensive_content(msg['content']):
+                    content = filter_content(msg['content'])
                 if len(content) > 100:
                     content = content[:97] + "..."
                 channel = bot.get_channel(channel_id)
                 channel_name = channel.name if channel else f"ID:{channel_id}"
+                user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {msg['author'].display_name} in #{channel_name}",
+                    name=f"{i}. {user.mention} in #{channel_name}",
                     value=content,
                     inline=False
                 )
@@ -2613,14 +2634,20 @@ async def snipe_all_links_command(ctx, page: int = 1):
         title=f"🔗 All Deleted Link Messages (All Channels/Threads)",
         color=discord.Color.purple()
     )
+    if page_msgs:
+        user = page_msgs[0][0]['author']
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
     for i, (msg, channel_id) in enumerate(page_msgs, start=start_idx + 1):
         content = msg['content'] or "*No text content*"
+        if is_offensive_content(msg['content']):
+            content = filter_content(msg['content'])
         if len(content) > 100:
             content = content[:97] + "..."
         channel = bot.get_channel(channel_id)
         channel_name = channel.name if channel else f"ID:{channel_id}"
+        user = msg['author']
         embed.add_field(
-            name=f"{i}. {msg['author'].display_name} in #{channel_name}",
+            name=f"{i}. {user.mention} in #{channel_name}",
             value=content,
             inline=False
         )
@@ -2635,14 +2662,20 @@ async def snipe_all_links_command(ctx, page: int = 1):
                 title=f"🔗 All Deleted Link Messages (All Channels/Threads)",
                 color=discord.Color.purple()
             )
+            if p_page_msgs:
+                user = p_page_msgs[0][0]['author']
+                p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
             for i, (msg, channel_id) in enumerate(p_page_msgs, start=p_start_idx + 1):
                 content = msg['content'] or "*No text content*"
+                if is_offensive_content(msg['content']):
+                    content = filter_content(msg['content'])
                 if len(content) > 100:
                     content = content[:97] + "..."
                 channel = bot.get_channel(channel_id)
                 channel_name = channel.name if channel else f"ID:{channel_id}"
+                user = msg['author']
                 p_embed.add_field(
-                    name=f"{i}. {msg['author'].display_name} in #{channel_name}",
+                    name=f"{i}. {user.mention} in #{channel_name}",
                     value=content,
                     inline=False
                 )
