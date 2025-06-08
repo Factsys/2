@@ -39,10 +39,6 @@ BOT_OWNER_ID = 776883692983156736
 # Store custom prefixes: {guild_id: prefix}
 custom_prefixes = {}
 
-# Load ticket system cog
-async def load_extensions():
-    await bot.load_extension('ticket')
-
 def get_prefix(bot, message):
     """Get custom prefix for guild or default"""
     if message.guild and message.guild.id in custom_prefixes:
@@ -984,69 +980,41 @@ class ModHelpPaginationView(discord.ui.View):
         else:
             await interaction.response.defer()
 
-# --- Ticket System ---
-ticket_role_per_guild = {}
+# --- Help commands ---
+@bot.command(name='help')
+@not_blocked()
+async def help_command(ctx):
+    view = MemberHelpPaginationView()
+    embed = view.get_embed()
+    await ctx.send(embed=embed, view=view)
 
-def get_ticket_role(guild_id):
-    return ticket_role_per_guild.get(guild_id)
+@bot.command(name='helpm')
+@not_blocked()
+async def helpm_command(ctx):
+    if not (ctx.author.guild_permissions.manage_messages or ctx.author.guild_permissions.administrator or is_bot_owner(ctx.author.id)):
+        await ctx.send("❌ Only mods/admins/owners can use this command!")
+        return
+    view = ModHelpPaginationView()
+    embed = view.get_embed()
+    await ctx.send(embed=embed, view=view)
 
-@bot.tree.command(name="cmr", description="Set the role that can access ticket channels")
+@bot.tree.command(name="help", description="Show member help")
 @check_not_blocked()
-@app_commands.describe(role="Role to give ticket access")
-async def cmr(interaction: discord.Interaction, role: discord.Role):
-    ticket_role_per_guild[interaction.guild.id] = role.id
-    await interaction.response.send_message(f"✅ Ticket role set to {role.mention}", ephemeral=True)
+async def help_slash(interaction: discord.Interaction):
+    view = MemberHelpPaginationView()
+    embed = view.get_embed()
+    await interaction.response.send_message(embed=embed, view=view)
 
-class TicketTypeView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=60)
-
-    @discord.ui.button(label="Premium Question", style=discord.ButtonStyle.primary)
-    async def premium(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(TicketReasonModal(ticket_type="Premium Question"))
-
-    @discord.ui.button(label="Macro Question", style=discord.ButtonStyle.secondary)
-    async def macro(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(TicketReasonModal(ticket_type="Macro Question"))
-
-class TicketReasonModal(discord.ui.Modal, title="Open Ticket"):
-    def __init__(self, ticket_type):
-        super().__init__()
-        self.ticket_type = ticket_type
-        self.reason = discord.ui.TextInput(label="Reason", style=discord.TextStyle.paragraph, required=True, max_length=400)
-        self.add_item(self.reason)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        user = interaction.user
-        role_id = get_ticket_role(guild.id)
-        role = guild.get_role(role_id) if role_id else None
-        category = discord.utils.get(guild.categories, name="Tickets")
-        if not category:
-            category = await guild.create_category("Tickets")
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            user: discord.PermissionOverwrite(view_channel=True, send_messages=True, attach_files=True, read_message_history=True),
-        }
-        if role:
-            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-        channel_name = f"ticket-{user.name.lower()}"
-        channel = await guild.create_text_channel(channel_name, category=category, overwrites=overwrites, reason="Ticket opened")
-        embed = discord.Embed(title=f"{self.ticket_type} Ticket", description=f"**User:** {user.mention}\n**Reason:** {self.reason.value}", color=discord.Color.green())
-        await channel.send(content=f"{user.mention} {role.mention if role else ''}", embed=embed)
-        await interaction.response.send_message(f"✅ Ticket created: {channel.mention}", ephemeral=True)
-
-@bot.tree.command(name="ct", description="Send the ticket panel")
+@bot.tree.command(name="helpm", description="Show mod help (mods/admins/owners only)")
 @check_not_blocked()
-@app_commands.describe(channel="Channel to send the ticket panel in")
-async def ct(interaction: discord.Interaction, channel: discord.TextChannel):
-    embed = discord.Embed(title="Open a Ticket", description="Click below to open a ticket. Choose your question type.", color=discord.Color.blurple())
-    await channel.send(embed=embed, view=TicketTypeView())
-    await interaction.response.send_message(f"✅ Ticket panel sent in {channel.mention}", ephemeral=True)
-
-# --- End Ticket System ---
-
-# ...existing code...
+async def helpm_slash(interaction: discord.Interaction):
+    logger.info(f"/helpm called by {interaction.user} ({interaction.user.id})")
+    if not (interaction.user.guild_permissions.manage_messages or interaction.user.guild_permissions.administrator or is_bot_owner(interaction.user.id)):
+        await interaction.response.send_message("❌ Only mods/admins/owners can use this command!", ephemeral=True)
+        return
+    view = ModHelpPaginationView()
+    embed = view.get_embed()
+    await interaction.response.send_message(embed=embed, view=view)
 
 # Bot events
 @bot.event
@@ -1750,7 +1718,7 @@ async def snipe_all_links_command(ctx, page: int = 1):
             if p_page_msgs:
                 user = p_page_msgs[0][0]['author']
                 p_embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
-            for i, ( msg, channel_id) in enumerate(p_page_msgs, start=p_start_idx + 1):
+            for i, (msg, channel_id) in enumerate(p_page_msgs, start=p_start_idx + 1):
                 content = msg['content'] or "*No text content*"
                 if is_offensive_content(msg['content']):
                     content = filter_content(msg['content'])
