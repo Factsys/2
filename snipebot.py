@@ -2883,3 +2883,12 @@ def find_channel_robust(guild, search_term):
 # Run the bot
 if __name__ == "__main__":
     bot.run(os.getenv('DISCORD_TOKEN'))
+
+# At the top of your main file, after imports
+try:
+    import ticket
+    if hasattr(ticket, 'setup_ticket_commands'):
+        ticket.setup_ticket_commands(bot)
+    print("ticket.py loaded and ticket commands registered.")
+except Exception as e:
+    print(f"ticket.py not loaded: {e}")
