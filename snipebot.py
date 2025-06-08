@@ -13,6 +13,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Optional, List, Union
 import logging
+import ticket  # or from ticket import setup_ticket_system if it's a function
 
 # Set up logging for debugging
 logging.basicConfig(level=logging.INFO)
