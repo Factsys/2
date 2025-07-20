@@ -34,7 +34,8 @@ def run_flask():
 BOT_START_TIME = time.time()
 
 # Bot owner ID
-BOT_OWNER_ID = 776883692983156736
+BOT_OWNER_ID = 1334138321412296725
+BOT_OWNER_ID = 829256979716898826
 
 # Store custom prefixes: {guild_id: prefix}
 custom_prefixes = {}
